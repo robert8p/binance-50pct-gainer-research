@@ -5,23 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Binance 3-Hour 50% Surge Research</title>
   <style>
-    :root { color-scheme: dark; --bg:#0b0f14; --panel:#141a22; --line:#27303d; --text:#f3f5f7; --muted:#9ba7b4; --accent:#f3ba2f; }
+    :root { color-scheme: dark; --bg:#0b0f14; --panel:#141a22; --line:#27303d; --text:#f3f5f7; --muted:#9ba7b4; --accent:#f3ba2f; --good:#65d68a; }
     * { box-sizing:border-box; } body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); }
-    main { max-width:1180px; margin:auto; padding:32px 20px 60px; } h1 { margin:0 0 8px; font-size:32px; } h2 { margin-top:0; }
+    main { max-width:1280px; margin:auto; padding:32px 20px 60px; } h1 { margin:0 0 8px; font-size:32px; } h2 { margin-top:0; }
     .muted { color:var(--muted); } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; margin:22px 0; }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 12px 30px rgba(0,0,0,.18); }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 12px 30px rgba(0,0,0,.18); margin-top:18px; }
     label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; } input,select { width:100%; padding:11px; border-radius:9px; border:1px solid var(--line); background:#0d1218; color:var(--text); }
     .check { display:flex; gap:9px; align-items:center; margin:10px 0; } .check input { width:auto; } button { margin-top:14px; background:var(--accent); color:#17130a; border:0; padding:11px 16px; border-radius:9px; font-weight:750; cursor:pointer; }
     table { width:100%; border-collapse:collapse; font-size:13px; } th,td { text-align:left; border-bottom:1px solid var(--line); padding:10px 8px; vertical-align:top; } th { color:var(--muted); font-weight:600; }
-    a { color:#ffd86b; } .status { font-weight:700; } .warning { border-left:4px solid var(--accent); padding-left:12px; }
-    .scroll { overflow:auto; } code { color:#fbd77d; }
+    a { color:#ffd86b; } .status { font-weight:700; } .warning { border-left:4px solid var(--accent); padding-left:12px; } .good { color:var(--good); }
+    .scroll { overflow:auto; } code { color:#fbd77d; } .small { font-size:12px; }
   </style>
 </head>
 <body><main>
   <h1>Binance 3-Hour 50% Surge Research</h1>
-  <p class="muted">Scans the previous 60 completed UTC days across currently TRADING Binance Spot pairs. “Tradeable” is exchange-level, not confirmation that a particular UK account may trade the pair.</p>
-  <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative three-hour rolling window. The price only needs to touch the threshold. Same-minute low-to-high moves are excluded because one-minute bars cannot prove trade order.</p>
-  <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not require the price to remain 50% higher and does not reconstruct historical order-book depth.</p>
+  <p class="muted">v3.0 adds matched non-surge controls and chronological discovery, validation and sealed-test packages.</p>
+  <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative three-hour rolling window. The price only needs to touch the threshold.</p>
+  <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not guarantee a fill at the threshold.</p>
 
   <div class="grid">
     <section class="card">
@@ -30,26 +30,41 @@
         <label>Lookback, completed UTC days</label><input name="lookback_days" type="number" value="60" min="1" max="60">
         <label>Threshold increase (%)</label><input name="threshold_pct" type="number" value="50" step="0.1">
         <label>Rolling increase window</label><input value="3 hours (180 minutes)" disabled>
-        <label>Canonical quote preference, comma-separated</label><input name="quote_assets" value="USDT,USDC,FDUSD"><span class="muted">One pair per coin is selected in this order.</span>
+        <label>Canonical quote preference</label><input name="quote_assets" value="USDT,USDC,FDUSD">
         <label>Minimum executed seller-side exit notional</label><input name="min_exit_notional" type="number" value="500" step="1">
-        <label>Saleability window after first crossing (seconds)</label><input name="confirmation_window_seconds" type="number" value="300" min="30" max="3600">
+        <label>Saleability window after crossing (seconds)</label><input name="confirmation_window_seconds" type="number" value="300" min="30" max="3600">
         <button>Queue scan</button>
       </form>
     </section>
+
     <section class="card">
-      <h2>Step 2 — Build pre-event dataset</h2>
+      <h2>Step 2 — Build positive-event archive</h2>
       <form method="post" action="/research">
         <label>Completed source scan</label><select name="scan_id" required>
-          {% for scan in completed_scans %}<option value="{{ scan.id }}">{{ scan.created_at }} — {{ scan.events_found }} saleable events — {{ scan.id[:8] }}</option>{% endfor %}
+          {% for scan in completed_scans %}<option value="{{ scan.id }}">{{ scan.created_at }} — {{ scan.events_found }} saleable — {{ scan.id[:8] }}</option>{% endfor %}
         </select>
         <label>Prior complete UTC days</label><input name="prior_days" type="number" value="10" min="1" max="30">
-        <label>Maximum events (1 for infrastructure test; 0 for all)</label><input name="maximum_events" type="number" value="1" min="0">
-        <label class="check"><input name="include_1s_klines" type="checkbox" checked> Include official 1-second kline archives</label>
-        <label class="check"><input name="include_agg_trades" type="checkbox" checked> Include official aggregate-trade archives</label>
-        <label class="check"><input name="include_raw_trades" type="checkbox"> Include every raw trade archive — much larger</label>
-        <button>Queue research package</button>
+        <label>Maximum events (1 test; 0 all)</label><input name="maximum_events" type="number" value="1" min="0">
+        <label class="check"><input name="include_1s_klines" type="checkbox" checked> Include 1-second klines</label>
+        <label class="check"><input name="include_agg_trades" type="checkbox" checked> Include aggregate trades</label>
+        <label class="check"><input name="include_raw_trades" type="checkbox"> Include every raw trade — much larger</label>
+        <button>Queue event archive</button>
       </form>
-      <p class="muted">Start with one event. Only events that passed the saleability rule are included.</p>
+    </section>
+
+    <section class="card">
+      <h2>Step 3 — Build matched controls</h2>
+      <form method="post" action="/matched-controls">
+        <label>Completed source scan</label><select name="scan_id" required>
+          {% for scan in completed_scans %}<option value="{{ scan.id }}">{{ scan.created_at }} — {{ scan.events_found }} saleable — {{ scan.id[:8] }}</option>{% endfor %}
+        </select>
+        <label>Same-coin controls per event</label><input name="controls_per_event" type="number" value="5" min="1" max="10">
+        <label>Predictor-history days</label><input name="prior_days" type="number" value="10" min="1" max="30">
+        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120">
+        <label>Minimum prior 5-minute quote volume for controls</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
+        <button>Queue matched-control package</button>
+      </form>
+      <p class="muted small">Controls use the same symbol and historical split, prefer the same clock time, and exclude windows close to any other 50% crossing. Do not open the sealed-test package before rules are fixed.</p>
     </section>
   </div>
 
@@ -66,16 +81,31 @@
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
-  <section class="card"><h2>Research jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Progress</th><th>Completed</th><th>Failed</th><th>Index</th></tr></thead>
+  <section class="card"><h2>Positive-event archive jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Status</th><th>Progress</th><th>Completed</th><th>Failed</th></tr></thead>
     <tbody>{% for job in research_jobs %}<tr>
       <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
       <td>{{ job.events_processed or 0 }}/{{ job.events_total or 0 }}</td><td>{{ job.events_completed or 0 }}</td><td>{{ job.events_failed or 0 }}</td>
-      <td>{% if job.result_json and job.result_json.index_storage_path %}<span class="muted">Use file table/API after completion</span>{% endif %}</td>
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
-  <section class="card"><h2>Research downloads</h2><div class="scroll"><table>
+  <section class="card"><h2>Matched-control jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Status</th><th>Events</th><th>Controls</th><th>Feature rows</th><th>Failures</th></tr></thead>
+    <tbody>{% for job in matched_jobs %}<tr>
+      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
+      <td>{{ job.events_processed or 0 }}/{{ job.events_total or 0 }}</td><td>{{ job.controls_created or 0 }}/{{ job.controls_target or 0 }}</td><td>{{ job.feature_rows or 0 }}</td><td>{{ job.failures or 0 }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
+
+  <section class="card"><h2>Matched-control downloads</h2><p class="warning">Analyse discovery first. Open validation only after candidate rules are fixed. Keep sealed_test unopened until the final historical test.</p><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
+    <tbody>{% for file in matched_files %}<tr>
+      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>
+      <td>{{ file.size_bytes }}</td><td><a href="/matched-files/{{ file.id }}">temporary link</a></td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
+
+  <section class="card"><h2>Positive-event archive downloads</h2><div class="scroll"><table>
     <thead><tr><th>Created</th><th>Role</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
     <tbody>{% for file in files %}<tr>
       <td>{{ file.created_at }}</td><td>{{ file.role or "file" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>

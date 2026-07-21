@@ -1,38 +1,62 @@
-# Deployment — v2.0.0
+# Deployment — v3.0.0
 
-## Existing v1.x installation
+## Existing v2 installation
 
-Use `ANDROID_UPDATE.md`. Version 2 keeps the same Render service names and Supabase tables, so it upgrades the existing deployment rather than creating a second app.
+1. Run `supabase/migrate_v2_to_v3.sql` in the existing Supabase project's SQL Editor.
+2. Replace the GitHub repository files with the v3 package and commit to `main`.
+3. Wait for both existing Render services to redeploy.
+4. Open `/health` and confirm:
 
-Use `supabase/migrate_v1_to_v2.sql` for an existing v1 database. The migration is additive, preserves prior data and leaves v1 scan-version fields null so old scans cannot be mistaken for v2 scans.
+```json
+{"status":"ok","version":"3.0.0"}
+```
+
+5. Open the dashboard and confirm **Step 3 — Build matched controls** is visible.
+
+The migration is additive. Existing scans, 63 events and positive-event research files are preserved. Do not rerun the discovery scan merely to create controls.
 
 ## Fresh installation
 
 1. Create a Supabase project.
 2. Run the complete `supabase/schema.sql` in SQL Editor.
-3. Confirm the `binance_` tables and private `binance-gainer-research` Storage bucket exist.
+3. Confirm the `binance_` tables and private `binance-gainer-research` bucket exist.
 4. Upload the repository to a private GitHub repository.
-5. Create a Render Blueprint from root-level `render.yaml`.
-6. Supply `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and `APP_PASSWORD` to both services.
-7. Wait for the web and worker services to show **Live**.
-8. Open `/health`; the response should be:
-
-```json
-{"status":"ok","version":"2.0.0"}
-```
-
-9. Open the dashboard and confirm a recent worker heartbeat.
-10. Queue the first scan with the displayed defaults:
+5. Create a Render Blueprint using root-level `render.yaml`.
+6. Supply these variables to both services:
 
 ```text
-Lookback: 60 completed UTC days
-Threshold: 50%
-Rolling window: fixed at 3 hours
-Quote preference: USDT,USDC,FDUSD
-Minimum saleability turnover: 500 quote units
-Saleability window: 300 seconds
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+APP_PASSWORD
 ```
 
-The **Saleable** count is the primary result. The **3h candidates** count includes audit failures.
+7. Wait for the web and worker services to show **Live**.
+8. Confirm `/health` reports v3.0.0 and the dashboard shows a recent worker heartbeat.
 
-After discovery, run one research event before setting maximum events to `0` for all saleable events.
+## Run the current matched-control round
+
+Use the completed 60-day scan containing 63 saleable events.
+
+Recommended settings:
+
+```text
+Controls per event: 5
+Predictor-history days: 10
+Decision horizons: 15,30,60,120
+Minimum prior 5-minute quote volume: 500
+```
+
+Queue the job once. The target is approximately 315 controls and 1,512 feature rows:
+
+```text
+(63 events + 315 controls) × 4 decision horizons
+```
+
+The worker downloads and verifies official one-minute archives. The first run may take materially longer than the original index generation. Closing the browser does not stop the worker.
+
+## Download order
+
+1. Download `matched_control_index.zip` and share it for a quality review.
+2. Download and analyse `matched_control_discovery.zip`.
+3. Keep validation unopened until candidate rules and thresholds have been fixed.
+4. Keep sealed test unopened until validation has completed and the final rule is preregistered.

@@ -1,44 +1,65 @@
-# Troubleshooting — v2.0.0
+# Troubleshooting — v3.0.0
 
-## Render reports a missing database column
+## Dashboard fails immediately after the upgrade
 
-Run the complete updated `supabase/schema.sql` in Supabase SQL Editor. Version 2 adds `window_minutes`, `candidates_found`, rolling-baseline fields and new saleability metrics.
+Run `supabase/migrate_v2_to_v3.sql` in the existing Supabase project's SQL Editor. The v3 dashboard queries the new matched-control job and file tables.
+
+## Matched-control job stays queued
+
+Open the Render background worker and confirm:
+
+- status is **Live**;
+- logs contain `Worker started; interrupted jobs recovered`;
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are populated;
+- the worker is not already processing a scan or another long-running job.
+
+The dashboard does not auto-refresh. Reload it manually.
+
+## Control progress is slow
+
+The first job must obtain roughly 70 days of one-minute archives for every event symbol plus BTC, ETH and BNB. Verified files are cached on the Render persistent disk, so retries and later jobs should be faster.
+
+Do not queue a duplicate job while one is running.
+
+## Fewer controls than requested
+
+Open `matched_control_index.zip` and inspect `quality_report.json` and `control_match_manifest.csv`.
+
+Common reasons include:
+
+- a newly listed coin lacks ten prior days;
+- several events for the same coin contaminate much of a short split;
+- missing one-minute archives;
+- insufficient five-minute executed quote volume;
+- another 50% crossing occurs near the proposed control.
+
+A shortfall is preferable to filling the dataset with weak cross-coin controls.
+
+## Job completes with warnings
+
+Warnings can mean:
+
+- not every event received the requested number of controls;
+- an event lacked the minimum pre-entry volume at one or more horizons;
+- source history was incomplete;
+- a symbol failed to download or parse.
+
+The positive event remains in the package and its quality fields disclose the issue.
+
+## Which ZIP should be shared first?
+
+Share `matched_control_index.zip` first. It contains design and quality information but no split feature matrices.
+
+Then use:
+
+1. discovery;
+2. validation only after candidate rules are fixed;
+3. sealed test only after final preregistration.
 
 ## Candidates exist but Saleable is zero
 
-Download **all candidates** and inspect:
-
-- `baseline_trade_unresolved`;
-- `crossing_trade_unresolved`;
-- `exact_window_pass`;
-- `seller_taker_notional_any_price`;
-- `minimum_exit_notional`;
-- `sellability_trades_truncated`;
-- `minimum_exit_vwap_pct_vs_threshold`.
-
-A coin may touch +50%, fall immediately and still pass if enough seller-initiated turnover occurs at lower prices. Conversely, a high print with little executable turnover fails.
-
-## Candidate count is lower than expected
-
-The app deliberately excludes:
-
-- same-minute low-to-high moves;
-- exact baseline-to-crossing intervals above three hours;
-- second or later events for the same pair on the same UTC day;
-- delisted coins absent from the current exchange universe.
-
-## Scan takes longer than v1
-
-Rolling-window validation fetches up to 27 hours of minute bars for each shortlisted day and resolves both baseline and crossing trades. The daily prefilter limits this work, but a volatile period can produce more candidate days.
+Download **all candidates** and inspect exact-trade and seller-side turnover fields. A coin can touch +50% and fail because the exact crossing cannot be proved or because insufficient seller-initiated turnover occurred afterwards.
 
 ## Health is live but no worker heartbeat appears
 
-Check the Render worker logs and verify that both services have identical values for:
-
-- `SUPABASE_URL`;
-- `SUPABASE_SERVICE_ROLE_KEY`;
-- `APP_PASSWORD`.
-
-## Old dashboard still shows 90 days
-
-Render is serving an older commit. Confirm GitHub contains version 2 files, then manually deploy the latest commit on both Render services.
+Check the Render worker logs and verify both services use the same Supabase URL and server-side secret key.

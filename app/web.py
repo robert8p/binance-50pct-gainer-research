@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="2.0.0")
+app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="3.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "3.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -42,8 +42,10 @@ def dashboard(request: Request) -> HTMLResponse:
     _auth(request)
     scans = db.select("binance_scan_jobs", order="created_at.desc", limit=25)
     research = db.select("binance_research_jobs", order="created_at.desc", limit=25)
+    matched_jobs = db.select("binance_matched_control_jobs", order="created_at.desc", limit=25)
     heartbeat = db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1)
     files = db.select("binance_research_files", order="created_at.desc", limit=100)
+    matched_files = db.select("binance_matched_control_files", order="created_at.desc", limit=100)
     completed_scans = [
         x for x in scans
         if x["status"] in {"completed", "completed_with_warnings"}
@@ -55,9 +57,11 @@ def dashboard(request: Request) -> HTMLResponse:
         {
             "scans": scans,
             "research_jobs": research,
+            "matched_jobs": matched_jobs,
             "completed_scans": completed_scans,
             "heartbeat": heartbeat[0] if heartbeat else None,
             "files": files,
+            "matched_files": matched_files,
         },
     )
 
@@ -118,6 +122,47 @@ def create_research(
             "include_1s_klines": include_1s_klines,
             "include_agg_trades": include_agg_trades,
             "include_raw_trades": include_raw_trades,
+        },
+    )
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/matched-controls")
+def create_matched_controls(
+    request: Request,
+    scan_id: str = Form(...),
+    controls_per_event: int = Form(5),
+    prior_days: int = Form(10),
+    horizons_minutes: str = Form("15,30,60,120"),
+    min_entry_notional: float = Form(500),
+) -> RedirectResponse:
+    _auth(request)
+    if not 1 <= controls_per_event <= 10:
+        raise HTTPException(400, "controls_per_event must be between 1 and 10")
+    if not 1 <= prior_days <= 30:
+        raise HTTPException(400, "prior_days must be between 1 and 30")
+    try:
+        horizons = sorted({int(value.strip()) for value in horizons_minutes.split(",") if value.strip()})
+    except ValueError as exc:
+        raise HTTPException(400, "horizons_minutes must be comma-separated integers") from exc
+    if not horizons or any(value < 5 or value > 360 for value in horizons):
+        raise HTTPException(400, "decision horizons must be between 5 and 360 minutes")
+    if min_entry_notional < 0:
+        raise HTTPException(400, "min_entry_notional cannot be negative")
+    db.insert(
+        "binance_matched_control_jobs",
+        {
+            "id": str(uuid.uuid4()),
+            "scan_id": scan_id,
+            "status": "queued",
+            "controls_per_event": controls_per_event,
+            "prior_days": prior_days,
+            "horizons_minutes": horizons,
+            "contamination_before_minutes": max(horizons),
+            "contamination_after_minutes": 180,
+            "min_entry_notional": min_entry_notional,
+            "discovery_pct": 70,
+            "validation_pct": 15,
         },
     )
     return RedirectResponse("/", status_code=303)
@@ -196,11 +241,21 @@ def download_file(request: Request, file_id: str) -> RedirectResponse:
     return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
 
 
+@app.get("/matched-files/{file_id}")
+def download_matched_file(request: Request, file_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_matched_control_files", filters={"id": f"eq.{file_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "Matched-control file not found")
+    return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
+
+
 @app.get("/api/status")
 def api_status(request: Request) -> dict[str, Any]:
     _auth(request)
     return {
         "scans": db.select("binance_scan_jobs", order="created_at.desc", limit=20),
         "research_jobs": db.select("binance_research_jobs", order="created_at.desc", limit=20),
+        "matched_control_jobs": db.select("binance_matched_control_jobs", order="created_at.desc", limit=20),
         "worker": db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1),
     }

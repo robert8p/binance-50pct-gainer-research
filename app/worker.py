@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from .binance import BinanceClient
 from .config import Settings
 from .research import ResearchBuilder
+from .matched_controls import MatchedControlBuilder
 from .scanner import Scanner
 from .supabase import SupabaseClient
 
@@ -34,7 +35,7 @@ def _claim(db: SupabaseClient, table: str) -> dict | None:
 
 def _recover_interrupted_jobs(db: SupabaseClient) -> None:
     """Requeue jobs left running by a worker restart; all writes are idempotent."""
-    for table in ("binance_scan_jobs", "binance_research_jobs"):
+    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs"):
         db.update(
             table,
             {"status": "eq.running"},
@@ -53,6 +54,7 @@ def main() -> None:
     binance = BinanceClient(settings.binance_api_base_urls)
     scanner = Scanner(db, binance)
     research = ResearchBuilder(db, binance, settings.temp_data_dir)
+    matched_controls = MatchedControlBuilder(db, binance, settings.temp_data_dir)
     _recover_interrupted_jobs(db)
     logger.info("Worker started; interrupted jobs recovered")
     while True:
@@ -80,6 +82,43 @@ def main() -> None:
                     logger.exception("Scan failed")
                     db.update(
                         "binance_scan_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "failed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "error_message": str(exc)[:4000],
+                        },
+                    )
+                continue
+
+
+            matched_job = _claim(db, "binance_matched_control_jobs")
+            if matched_job:
+                job_id = matched_job["id"]
+                try:
+                    result = matched_controls.run(matched_job)
+                    has_warnings = (
+                        result["failures"] > 0
+                        or result["controls_created"] < result["controls_target"]
+                        or result.get("quality_report", {}).get("event_entry_liquidity_failures", 0) > 0
+                    )
+                    db.update(
+                        "binance_matched_control_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "completed_with_warnings" if has_warnings else "completed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "events_processed": result["events_processed"],
+                            "controls_created": result["controls_created"],
+                            "feature_rows": result["feature_rows"],
+                            "failures": result["failures"],
+                            "result_json": result,
+                        },
+                    )
+                except Exception as exc:
+                    logger.exception("Matched-control job failed")
+                    db.update(
+                        "binance_matched_control_jobs",
                         {"id": f"eq.{job_id}"},
                         {
                             "status": "failed",

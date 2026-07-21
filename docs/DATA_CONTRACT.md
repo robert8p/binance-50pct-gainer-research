@@ -1,84 +1,65 @@
-# Data contract — v2.0.0
+# Data contract — v3.0.0
 
-## Unit of analysis
+## Positive event
 
-The event unit is the earliest qualifying surge for a selected Binance Spot pair on a UTC calendar day. One canonical pair is selected per base coin using the quote preference stored in the scan job.
-
-## Scan horizon
-
-The production dashboard defaults to and caps the lookback at **60 completed UTC days**. The current incomplete UTC day is excluded.
-
-## Rolling three-hour event
-
-Minute bars are retrieved from three hours before the event day through the end of the event day. For each later minute, the scanner considers prior minute lows whose minute-open timestamps are no more than 179 minutes earlier.
-
-A candidate occurs when:
+The event unit remains the earliest qualifying surge for a selected Binance Spot pair on a UTC day.
 
 ```text
-crossing-minute high >= baseline-minute low × (1 + threshold_pct / 100)
+later-minute high >= eligible earlier-minute low × 1.50
 ```
 
-The baseline minute must be earlier than the crossing minute. Same-minute low-to-high moves are excluded.
+The baseline minute must precede the crossing minute and its open time must be no more than 179 minutes earlier. Exact aggregate trades must prove the low-to-crossing interval is no more than 10,800 seconds.
 
-The 179-minute open-time cap is conservative: even if the baseline low occurs at the beginning of its minute and the crossing occurs at the end of the later minute, exact elapsed time remains below 180 minutes.
+The 60-day primary export includes only events that passed the configured seller-side executed-liquidity test.
 
-The move may cross a UTC-day boundary. First listing days are included even when no previous daily bar exists. In that case `previous_day_bar_available = false` and `previous_day_close` is populated with the first daily-bar open for backward-compatible context only.
+## Matched sample unit
 
-## Exact trade proof
+Each positive event is a match group containing:
 
-The scanner resolves:
+- one positive event anchor;
+- up to the configured number of same-symbol control anchors;
+- one feature row per sample and decision horizon.
 
-- `baseline_trade_time`: latest aggregate trade at the baseline minute’s low;
-- `first_cross_trade_time`: first aggregate trade at or above the threshold inside the crossing minute.
+Default decision horizons are 15, 30, 60 and 120 minutes before the anchor.
 
-A later recross is never substituted for an unresolved crossing because the price is not required to remain above the threshold.
+## Control eligibility
 
-Qualification requires:
+A control:
+
+- uses the same symbol as its positive event;
+- falls inside the same chronological split;
+- prefers the same UTC minute of day and weekday;
+- is not within 24 hours of a known saleable event for that symbol;
+- has no detected rolling 50% crossing from the earliest decision horizon through 180 minutes after the control anchor;
+- has at least 98% of the configured prior-history minutes;
+- has complete local minutes around the decision and outcome windows;
+- meets the configured five-minute executed quote-volume floor at every decision horizon.
+
+Returns, volume and volatility are not used to rank control matches.
+
+## Predictor cutoff
+
+For a decision timestamp, the last eligible predictor bar is the one-minute bar opening one minute before the timestamp's minute.
+
+Example:
 
 ```text
-0 < first_cross_trade_time - baseline_trade_time <= 10,800 seconds
+decision timestamp: 12:19:20 UTC
+last predictor bar open: 12:18:00 UTC
 ```
 
-Unresolved baseline or crossing trades remain in the audit candidate set but cannot pass saleability.
+The 12:19 bar is excluded because it was not complete at 12:19:20.
 
-## Saleability
+## Features
 
-Default saleability requires at least 500 quote units of seller-initiated executed turnover at **any price** from the exact crossing through the following 300 seconds.
+Features include multi-horizon price returns and ranges, realised volatility, path drawdowns/run-ups, quote volume, trade counts, taker-buy ratios, acceleration, 24-hour position, same-time historical volume and BTC/ETH/BNB context.
 
-`buyer_was_maker = true` is interpreted as seller-initiated execution.
+Outcome columns are explicitly prefixed `outcome_` and must not be used as predictors.
 
-The main metric is:
+## Splits
 
-```text
-seller_taker_notional_any_price
-```
+Whole event dates are assigned chronologically to discovery, validation and sealed-test sets. Calendar days between event dates inherit the surrounding split, and controls remain inside their event's split.
 
-Additional fields measure persistence and exit quality without making them pass conditions:
+## Dependence
 
-- `seller_taker_notional_at_or_above`;
-- `minimum_exit_vwap`;
-- `minimum_exit_vwap_pct_vs_threshold`;
-- `minimum_exit_reached_price`;
-- `lowest_seller_exit_price`;
-- `highest_seller_exit_price`.
-
-The primary event export filters `sellability_pass = true`. The candidate export includes all detected surges.
-
-## Time and cutoff conventions
-
-- Database and API timestamps: UTC.
-- Event date: UTC crossing date.
-- London observations: 14:00, 17:00 and 19:00 Europe/London with daylight-saving conversion.
-- Research predictor cutoff: timestamp strictly before the crossing minute open.
-- The complete crossing minute is excluded from predictor data.
-
-## Stored minute data
-
-Event minute storage includes the three-hour lead-in before the UTC day as well as the event day, allowing cross-midnight baselines to be audited.
-
-## Recovery and idempotency
-
-- One event per `scan_id, symbol, event_date`.
-- Primary keys prevent duplicate bars and aggregate trades.
-- Interrupted worker jobs are requeued.
-- Completed research files are reused within the same job.
+Rows share coins, events and overlapping minute history. Statistical analysis must cluster at least by match group and symbol and must account for testing multiple features and horizons.
