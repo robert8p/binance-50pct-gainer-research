@@ -43,9 +43,27 @@ class Scanner:
         quote_assets = [x.strip().upper() for x in (job.get("quote_assets") or ["USDT"]) if x.strip()]
 
         now = datetime.now(timezone.utc)
-        end = floor_utc_day(now)
-        start = end - timedelta(days=lookback + 1)
-        candidate_start = end - timedelta(days=lookback)
+        latest_completed_end = floor_utc_day(now)
+        requested_start = job.get("window_start_date")
+        requested_end = job.get("window_end_date_exclusive")
+        if requested_start or requested_end:
+            if not requested_start or not requested_end:
+                raise ValueError("Both window_start_date and window_end_date_exclusive are required")
+            candidate_start = datetime.fromisoformat(str(requested_start)).replace(tzinfo=timezone.utc)
+            end = datetime.fromisoformat(str(requested_end)).replace(tzinfo=timezone.utc)
+            if candidate_start >= end:
+                raise ValueError("Historical scan start must be before end")
+            if end > latest_completed_end:
+                raise ValueError("Historical scan end must not include the current incomplete UTC day")
+            span_days = (end - candidate_start).days
+            if span_days < 1 or span_days > 180:
+                raise ValueError("Historical scan window must be between 1 and 180 completed UTC days")
+            lookback = span_days
+        else:
+            end = latest_completed_end
+            candidate_start = end - timedelta(days=lookback)
+        # Load one extra daily bar so the first candidate date can reference the prior day.
+        start = candidate_start - timedelta(days=1)
 
         exchange = self.binance.exchange_info()
         snapshot_at = datetime.now(timezone.utc).isoformat()

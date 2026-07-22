@@ -1,126 +1,90 @@
 # Binance 3-Hour 50% Surge Research App
 
-A deployable GitHub, Render and Supabase application for studying Binance Spot coins that rose at least **50% within three hours** during the previous **60 completed UTC days**.
+A deployable GitHub, Render and Supabase application for studying Binance Spot coins that rose at least **50% within three hours** and were demonstrably saleable after crossing.
 
-The app is historical research infrastructure. It does not place orders, connect to a Binance trading account or claim that past surges predict future surges.
+The app is historical research infrastructure. It does not place orders, connect to a Binance trading account or claim that historical associations are profitable.
 
-## Version 3.0.0
+## Version 4.0.0
 
-Version 3 preserves the v2 scanner and positive-event archive, then adds a **matched non-surge control round** so apparent pre-surge patterns can be compared with ordinary periods for the same coin.
+Version 4 retains the 60-day/custom-date surge scanner, positive-event archive and matched controls, then adds a **full ten-day context engine**.
 
-For the current 63-event scan, the default five controls per event target approximately **315 matched controls**.
+For every event and matched control, it calculates predictors using only completed one-minute bars before decision times 15, 30, 60 and 120 minutes before the anchor.
 
-## Stage 1 — 60-day surge census
+## What the ten-day round measures
 
-A candidate is the earliest minute on a UTC day where:
-
-```text
-later one-minute high >= lowest eligible prior one-minute low × 1.50
-```
-
-The baseline minute must precede the crossing minute. The baseline-minute-open gap is capped at 179 minutes, allowing exact aggregate trades to prove that the low-to-crossing interval did not exceed three hours.
-
-The move may cross midnight. The price only needs to touch +50%; it does not need to close or remain there.
-
-## Saleability definition
-
-A candidate passes the default saleability test when at least **500 quote units** of seller-initiated trades execute at any price during the five minutes after the exact crossing trade.
-
-This is evidence that a small historical exit was possible. It is not reconstructed order-book depth and does not guarantee an exit at the +50% threshold.
-
-## Stage 2 — Positive-event archive
-
-For saleable events, the app can collect:
-
-- ten prior complete UTC days;
-- official one-minute and optional one-second kline archives;
-- optional aggregate-trade and raw-trade archives;
-- event-day data cut off strictly before the crossing minute;
-- hashes, source URLs and quality warnings.
-
-This archive is useful for audit and microstructure research, but positive events alone cannot establish a leading indicator.
-
-## Stage 3 — Matched-control analysis
-
-The matched-control job creates same-coin non-surge comparison windows.
-
-Default design:
-
-- five controls per positive event;
-- same Binance symbol;
-- same chronological data split;
-- exact UTC clock-time preference, then small clock-time tolerances;
-- no matching on returns, volume or volatility, because doing so could erase the signal being tested;
-- exclusion of controls within 24 hours of a known event;
-- exclusion of any control near another 50% rolling crossing;
-- minimum 500 quote units of executed volume during each five-minute pre-entry check;
-- decision horizons of 15, 30, 60 and 120 minutes before the event/control anchor;
-- predictors calculated only from fully completed one-minute bars before the decision timestamp.
-
-The app calculates a wide pre-registered feature set covering:
-
-- multi-horizon returns, ranges, run-ups and drawdowns;
-- realised volatility;
-- quote-volume and trade-count intensity;
-- taker-buy imbalance;
-- acceleration and relative-volume measures;
-- distance from 24-hour highs and lows;
-- candle structure;
-- same-time historical volume comparisons;
-- BTC, ETH and BNB market context;
-- data completeness and pre-entry liquidity flags.
-
-## Historical split protection
-
-Whole UTC event dates are assigned chronologically to:
+Feature windows:
 
 ```text
-discovery: 70%
-validation: 15%
-sealed test: 15%
+15m, 30m, 1h, 2h, 3h, 6h, 12h,
+1d, 2d, 3d, 5d, 7d and 10d
 ```
 
-Controls stay within the same date range as their matched event.
+Feature families include:
 
-The job creates four downloads:
+- returns, range position, distance from highs/lows, trend slope and trend consistency;
+- run-up, drawdown, recovery and return acceleration;
+- quote volume, trade count, average trade size and taker-buy ratio;
+- volatility and range compression/expansion;
+- daily price, volume and range trends;
+- one-minute shock counts, hourly volume spikes, breakout attempts and failed breakouts;
+- activity relative to the same UTC time during the prior seven days;
+- relative strength versus BTC, ETH, BNB and an equal-weight market proxy;
+- ten-day completeness and minimum entry liquidity.
 
-- `matched_control_index.zip` — design, quality and package manifest only;
-- `matched_control_discovery.zip` — hypothesis generation;
-- `matched_control_validation.zip` — one-time validation after candidate rules are fixed;
-- `matched_control_sealed_test.zip` — final historical test; do not inspect early.
+Columns beginning `outcome_` are diagnostics/labels and must never be used as predictors.
 
-Rows are clustered by coin, event and overlapping time. Row count must never be treated as independent sample size.
+## Existing data versus fresh evidence
+
+The previously opened 63-event dataset can be processed in **exploratory reuse** mode. It is useful for discovering ten-day feature families, but it cannot prove a new rule because its validation and sealed splits have already been inspected.
+
+For fresh evidence, v4 also supports fixed historical scan dates. The correct staged workflow is:
+
+1. Queue an earlier historical surge scan using explicit start/end dates.
+2. Build same-coin matched controls.
+3. Queue ten-day context using **fresh staged** mode.
+4. Analyse discovery only.
+5. Fix candidate rules before opening validation.
+6. Open validation once without retuning.
+7. Keep sealed test unopened until the final rule is frozen.
+
+## Existing core definitions
+
+A surge is the earliest later-minute high at least 50% above an eligible prior-minute low within the conservative three-hour rolling window. The price only needs to touch the threshold.
+
+A candidate is saleable when at least 500 quote units of seller-initiated aggregate trades execute at any price during the five minutes following the exact crossing trade.
 
 ## Infrastructure
 
-- **GitHub:** source control and automated tests.
-- **Render web service:** password-protected dashboard.
-- **Render worker:** long-running scans and data preparation.
-- **Render persistent disk:** verified one-minute archive cache and restart recovery.
-- **Supabase Postgres:** jobs, events, matches and audit records.
-- **Supabase Storage:** private research packages.
+- GitHub: source control and automated tests.
+- Render web service: password-protected dashboard.
+- Render worker: scans and research jobs.
+- Render persistent disk: verified archive cache and restart recovery.
+- Supabase Postgres: jobs, events, controls and audit records.
+- Supabase Storage: private downloadable research packages.
 
-No Binance API key is required. Public market-data endpoints and Binance's official public archive are used.
+No Binance trading credentials are required. Public market-data endpoints and Binance's public archive are used.
 
-## Deployment
+## Upgrade
 
-For an existing v2 installation, follow `WINDOWS_UPDATE.md` or `ANDROID_UPDATE.md` and run:
+Existing v3 users must run:
 
 ```text
-supabase/migrate_v2_to_v3.sql
+supabase/migrate_v3_to_v4.sql
 ```
 
-For a fresh installation, run the complete `supabase/schema.sql`.
+before deploying the v4 source files.
 
-After deployment, `/health` should report:
+After deployment, `/health` should return:
 
 ```json
-{"status":"ok","version":"3.0.0"}
+{"status":"ok","version":"4.0.0"}
 ```
+
+Follow `WINDOWS_UPDATE.md` for the simplest Windows upgrade.
 
 ## Main limitations
 
-- The initial universe is based on coins currently reported as Binance Spot-tradeable, so delisted historical coins can be missing.
-- Exchange-level tradability does not guarantee availability to a particular UK account or Binance entity.
-- One-minute matched controls cannot support event-versus-control claims about one-second or trade-level features. Those require a later symmetric microstructure collection round.
-- A matched association is not yet a trading rule. Fees, slippage, entry mechanics, exits, multiplicity and clustered inference still need testing.
+- Historical scans still begin with the current Binance Spot universe, so delisted coins can be absent.
+- Current Binance exchange tradability does not guarantee availability to a specific UK account or entity.
+- Ten-day matched associations are not executable strategies until continuously tested with fixed entry, exit, fees, slippage and cooldown rules.
+- Samples are clustered by symbol and event; row counts overstate independent evidence.

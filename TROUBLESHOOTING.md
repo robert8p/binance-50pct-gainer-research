@@ -1,65 +1,32 @@
-# Troubleshooting — v3.0.0
+# Troubleshooting — v4.0.0
 
-## Dashboard fails immediately after the upgrade
+## Dashboard fails immediately after upgrade
 
-Run `supabase/migrate_v2_to_v3.sql` in the existing Supabase project's SQL Editor. The v3 dashboard queries the new matched-control job and file tables.
+Run `supabase/migrate_v3_to_v4.sql`. The v4 dashboard requires the new context tables.
 
-## Matched-control job stays queued
+## Context job remains queued
 
-Open the Render background worker and confirm:
+Open the Render worker logs. Confirm the worker is Live and both Supabase variables are populated. Restart the worker; queued jobs are preserved.
 
-- status is **Live**;
-- logs contain `Worker started; interrupted jobs recovered`;
-- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are populated;
-- the worker is not already processing a scan or another long-running job.
+## Context job has many insufficient-history warnings
 
-The dashboard does not auto-refresh. Reload it manually.
+The symbol may have been newly listed or the archive may be incomplete. Do not impute missing minutes. Keep these rows flagged or analyse new listings separately.
 
-## Control progress is slow
+## Historical scan rejects the dates
 
-The first job must obtain roughly 70 days of one-minute archives for every event symbol plus BTC, ETH and BNB. Verified files are cached on the Render persistent disk, so retries and later jobs should be faster.
+Both dates are required. The start is inclusive, the end is exclusive, the span must be 1–180 days, and the end cannot include a future UTC day.
 
-Do not queue a duplicate job while one is running.
+## Job is slow
 
-## Fewer controls than requested
+The ten-day job downloads and verifies one-minute archives for every event/control symbol plus BTC, ETH and BNB. The persistent cache makes subsequent runs faster. Do not queue duplicate jobs.
 
-Open `matched_control_index.zip` and inspect `quality_report.json` and `control_match_manifest.csv`.
+## Which files should be shared for analysis?
 
-Common reasons include:
+For the existing dataset, share:
 
-- a newly listed coin lacks ten prior days;
-- several events for the same coin contaminate much of a short split;
-- missing one-minute archives;
-- insufficient five-minute executed quote volume;
-- another 50% crossing occurs near the proposed control.
+```text
+ten_day_context_index.zip
+ten_day_context_exploratory.zip
+```
 
-A shortfall is preferable to filling the dataset with weak cross-coin controls.
-
-## Job completes with warnings
-
-Warnings can mean:
-
-- not every event received the requested number of controls;
-- an event lacked the minimum pre-entry volume at one or more horizons;
-- source history was incomplete;
-- a symbol failed to download or parse.
-
-The positive event remains in the package and its quality fields disclose the issue.
-
-## Which ZIP should be shared first?
-
-Share `matched_control_index.zip` first. It contains design and quality information but no split feature matrices.
-
-Then use:
-
-1. discovery;
-2. validation only after candidate rules are fixed;
-3. sealed test only after final preregistration.
-
-## Candidates exist but Saleable is zero
-
-Download **all candidates** and inspect exact-trade and seller-side turnover fields. A coin can touch +50% and fail because the exact crossing cannot be proved or because insufficient seller-initiated turnover occurred afterwards.
-
-## Health is live but no worker heartbeat appears
-
-Check the Render worker logs and verify both services use the same Supabase URL and server-side secret key.
+For a fresh staged round, share the index and discovery package first. Keep validation and sealed test unopened.

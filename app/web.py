@@ -4,7 +4,7 @@ import base64
 import csv
 import io
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="3.0.0")
+app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="4.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "3.0.0"}
+    return {"status": "ok", "version": "4.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -43,9 +43,14 @@ def dashboard(request: Request) -> HTMLResponse:
     scans = db.select("binance_scan_jobs", order="created_at.desc", limit=25)
     research = db.select("binance_research_jobs", order="created_at.desc", limit=25)
     matched_jobs = db.select("binance_matched_control_jobs", order="created_at.desc", limit=25)
+    context_jobs = db.select("binance_context_jobs", order="created_at.desc", limit=25)
     heartbeat = db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1)
     files = db.select("binance_research_files", order="created_at.desc", limit=100)
     matched_files = db.select("binance_matched_control_files", order="created_at.desc", limit=100)
+    context_files = db.select("binance_context_files", order="created_at.desc", limit=100)
+    completed_matched_jobs = [
+        x for x in matched_jobs if x["status"] in {"completed", "completed_with_warnings"}
+    ]
     completed_scans = [
         x for x in scans
         if x["status"] in {"completed", "completed_with_warnings"}
@@ -58,10 +63,13 @@ def dashboard(request: Request) -> HTMLResponse:
             "scans": scans,
             "research_jobs": research,
             "matched_jobs": matched_jobs,
+            "context_jobs": context_jobs,
+            "completed_matched_jobs": completed_matched_jobs,
             "completed_scans": completed_scans,
             "heartbeat": heartbeat[0] if heartbeat else None,
             "files": files,
             "matched_files": matched_files,
+            "context_files": context_files,
         },
     )
 
@@ -74,10 +82,27 @@ def create_scan(
     quote_assets: str = Form("USDT,USDC,FDUSD"),
     min_exit_notional: float = Form(500),
     confirmation_window_seconds: int = Form(300),
+    window_start_date: str = Form(""),
+    window_end_date_exclusive: str = Form(""),
 ) -> RedirectResponse:
     _auth(request)
-    if not 1 <= lookback_days <= 60:
-        raise HTTPException(400, "lookback_days must be between 1 and 60")
+    if not 1 <= lookback_days <= 180:
+        raise HTTPException(400, "lookback_days must be between 1 and 180")
+    start_value = window_start_date.strip() or None
+    end_value = window_end_date_exclusive.strip() or None
+    if bool(start_value) != bool(end_value):
+        raise HTTPException(400, "Enter both historical start and end dates, or leave both blank")
+    if start_value and end_value:
+        try:
+            start_day = date.fromisoformat(start_value)
+            end_day = date.fromisoformat(end_value)
+        except ValueError as exc:
+            raise HTTPException(400, "Historical dates must use YYYY-MM-DD") from exc
+        span = (end_day - start_day).days
+        if not 1 <= span <= 180:
+            raise HTTPException(400, "Historical window must contain 1 to 180 completed UTC days")
+        if end_day > datetime.now(timezone.utc).date():
+            raise HTTPException(400, "Historical end cannot be after today")
     if threshold_pct <= 0:
         raise HTTPException(400, "threshold_pct must be positive")
     quotes = [x.strip().upper() for x in quote_assets.split(",") if x.strip()]
@@ -93,6 +118,8 @@ def create_scan(
             "quote_assets": quotes,
             "min_exit_notional": min_exit_notional,
             "confirmation_window_seconds": confirmation_window_seconds,
+            "window_start_date": start_value,
+            "window_end_date_exclusive": end_value,
         },
     )
     return RedirectResponse("/", status_code=303)
@@ -163,6 +190,41 @@ def create_matched_controls(
             "min_entry_notional": min_entry_notional,
             "discovery_pct": 70,
             "validation_pct": 15,
+        },
+    )
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/ten-day-context")
+def create_ten_day_context(
+    request: Request,
+    matched_control_job_id: str = Form(...),
+    research_mode: str = Form("exploratory_reuse"),
+    horizons_minutes: str = Form("15,30,60,120"),
+    min_entry_notional: float = Form(500),
+) -> RedirectResponse:
+    _auth(request)
+    if research_mode not in {"exploratory_reuse", "fresh_staged"}:
+        raise HTTPException(400, "Invalid research mode")
+    try:
+        horizons = sorted({int(value.strip()) for value in horizons_minutes.split(",") if value.strip()})
+    except ValueError as exc:
+        raise HTTPException(400, "horizons_minutes must be comma-separated integers") from exc
+    if not horizons or any(value < 5 or value > 360 for value in horizons):
+        raise HTTPException(400, "decision horizons must be between 5 and 360 minutes")
+    if min_entry_notional < 0:
+        raise HTTPException(400, "min_entry_notional cannot be negative")
+    db.insert(
+        "binance_context_jobs",
+        {
+            "id": str(uuid.uuid4()),
+            "matched_control_job_id": matched_control_job_id,
+            "status": "queued",
+            "research_mode": research_mode,
+            "prior_days": 10,
+            "horizons_minutes": horizons,
+            "windows_minutes": [15,30,60,120,180,360,720,1440,2880,4320,7200,10080,14400],
+            "min_entry_notional": min_entry_notional,
         },
     )
     return RedirectResponse("/", status_code=303)
@@ -250,6 +312,15 @@ def download_matched_file(request: Request, file_id: str) -> RedirectResponse:
     return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
 
 
+@app.get("/context-files/{file_id}")
+def download_context_file(request: Request, file_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_context_files", filters={"id": f"eq.{file_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "Ten-day context file not found")
+    return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
+
+
 @app.get("/api/status")
 def api_status(request: Request) -> dict[str, Any]:
     _auth(request)
@@ -257,5 +328,6 @@ def api_status(request: Request) -> dict[str, Any]:
         "scans": db.select("binance_scan_jobs", order="created_at.desc", limit=20),
         "research_jobs": db.select("binance_research_jobs", order="created_at.desc", limit=20),
         "matched_control_jobs": db.select("binance_matched_control_jobs", order="created_at.desc", limit=20),
+        "context_jobs": db.select("binance_context_jobs", order="created_at.desc", limit=20),
         "worker": db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1),
     }

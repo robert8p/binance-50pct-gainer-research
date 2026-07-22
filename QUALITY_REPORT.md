@@ -1,41 +1,25 @@
-# Quality report — v3.0.0
+# Quality report — v4.0.0
 
-## Automated validation
+## Automated validation completed in the build environment
 
-The release passes **26 network-free tests** covering the original v2 scanner and research collector plus:
+- 29 relevant network-free tests passed.
+- Python compilation passed for all application modules.
+- Ten-day features were verified to ignore the decision minute and all future bars.
+- Required 5-, 7- and 10-day windows were verified.
+- Structural feature families and schema/migration contracts were verified.
+- The migration was scanned for destructive SQL operations.
 
-- chronological split assignment without dividing UTC dates;
-- conservative rolling-crossing detection;
-- exclusion of current and future minutes from predictors;
-- same-symbol control selection;
-- exclusion of controls near known events and other 50% crossings;
-- matched-control database contract and row-level-security activation.
+The two unchanged positive-event archive tests require PyArrow at test-import time. PyArrow is pinned in `requirements.txt` and installed by GitHub Actions/Render, but it was unavailable in the offline packaging environment. The underlying v3 research code was not changed.
 
-Additional checks performed:
+## Integrity controls
 
-```text
-pytest: 26 passed
-Python compilation: passed
-synthetic end-to-end matched-package build: passed
-current 63-event calendar-capacity simulation: 315/315 controls available
-pinned dependency installation: passed
-```
-
-## Research-integrity choices
-
-- Controls stay within the same chronological split as their event.
-- Matching uses coin identity and calendar variables, not possible predictive features.
-- Controls must be outside a contamination interval around every detected 50% crossing.
-- One control date contributes at most one control to a given event.
-- Predictor bars must be complete before the decision timestamp.
-- Feature rows preserve event and symbol cluster identifiers.
-- The index package excludes all split feature matrices.
-- The sealed-test package is produced separately and clearly labelled.
+- Predictors end at the last completed minute before each decision timestamp.
+- Outcome columns are explicitly prefixed `outcome_`.
+- Existing opened data produce one exploratory package, not misleading new validation claims.
+- Fresh staged mode preserves discovery, validation and sealed-test packages.
+- Source archives are cached, hashed and listed in the index manifest.
+- Missing data remain flagged rather than forward-filled.
 
 ## Remaining limitations
 
-- Live Binance, Supabase and Render calls are not executed by the offline test suite.
-- Historical Binance archive availability can vary; missing files are disclosed and the newest completed day can fall back to the public REST endpoint.
-- Current-universe survivorship bias remains for the initial 60-day census.
-- The matched round uses one-minute data symmetrically. Event-only one-second and aggregate-trade data must not be used for case-control claims.
-- Five controls per event improve comparison but do not create 315 independent observations; inference must cluster by event and coin.
+Live Binance, Supabase and Render calls were not available in the packaging environment. Deployment should begin with the existing exploratory job before queuing a large earlier historical scan.

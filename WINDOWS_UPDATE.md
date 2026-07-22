@@ -1,75 +1,61 @@
-# Simple Windows upgrade from v2 to v3
+# Simple Windows upgrade from v3 to v4
 
-These steps update the existing app and preserve the completed scan and research data.
+## 1. Download and extract
 
-## 1. Apply the Supabase migration first
+Download the v4 ZIP, right-click it in Downloads, select **Extract All**, and open the extracted folder.
 
-1. Extract the v3 ZIP in Windows.
-2. Open `supabase\migrate_v2_to_v3.sql` in Notepad.
+## 2. Update Supabase first
+
+1. Open the extracted `supabase` folder.
+2. Open `migrate_v3_to_v4.sql` in Notepad.
 3. Press `Ctrl+A`, then `Ctrl+C`.
-4. Open the existing Supabase project.
-5. Open **SQL Editor → New query**.
-6. Paste the SQL and select **Run**.
-7. Confirm there is no red error.
+4. In Supabase, open **SQL Editor → New query**.
+5. Paste and select **Run**.
+6. Confirm there is no red error.
 
-Doing the database migration first prevents the newly deployed dashboard from looking for tables that do not yet exist.
+## 3. Replace the GitHub files
 
-## 2. Replace the GitHub files
-
-1. Open the existing private GitHub repository.
+1. Open the existing GitHub repository.
 2. Select **Add file → Upload files**.
-3. Open the extracted v3 folder in File Explorer.
-4. Select everything inside the folder and drag it onto the GitHub upload page.
-5. Use this commit message:
+3. In Windows Explorer, select everything inside the extracted v4 folder.
+4. Drag the selected files into GitHub.
+5. Tick **Replace files with the same name** if GitHub asks.
+6. Commit with: `Upgrade to v4 ten-day context`.
+
+Uploading the folder contents preserves the required top-level `app`, `supabase`, `tests`, `render.yaml` and `requirements.txt` structure.
+
+## 4. Wait for Render
+
+Both services should redeploy automatically:
 
 ```text
-Upgrade Binance matched-control research app to v3
+binance-50pct-scanner-web
+binance-50pct-scanner-worker
 ```
 
-6. Select **Commit changes**.
-
-Do not upload only the ZIP file. The repository root must still show `app`, `supabase`, `tests`, `render.yaml` and `requirements.txt`.
-
-## 3. Let Render redeploy
-
-The existing Blueprint should redeploy both services automatically.
-
-Wait for:
+When both are Live, open:
 
 ```text
-binance-50pct-scanner-web — Live
-binance-50pct-scanner-worker — Live
+https://YOUR-RENDER-APP.onrender.com/health
 ```
 
-No new environment variables are required.
-
-## 4. Verify
-
-Open:
-
-```text
-https://YOUR-RENDER-URL.onrender.com/health
-```
-
-Expected response:
+Expected result:
 
 ```json
-{"status":"ok","version":"3.0.0"}
+{"status":"ok","version":"4.0.0"}
 ```
 
-Then open the dashboard and confirm **Step 3 — Build matched controls** appears.
+## 5. Run the existing-data ten-day job
 
-## 5. Queue the matched-control job
+1. Open the main app dashboard.
+2. Find **Step 4 — Build ten-day context**.
+3. Select the matched-control job that produced the 63-event/301-control package.
+4. Select **Existing/opened data — exploratory only**.
+5. Leave `15,30,60,120` and `500` unchanged.
+6. Select **Queue ten-day context package**.
+7. Refresh periodically until complete.
+8. Download `ten_day_context_index.zip` and `ten_day_context_exploratory.zip`.
 
-Choose the completed scan showing 63 saleable events and use:
+## 6. Fresh evidence later
 
-```text
-Controls per event: 5
-Predictor-history days: 10
-Decision horizons: 15,30,60,120
-Minimum prior 5-minute quote volume: 500
-```
-
-Select **Queue matched-control package** once.
-
-The first run downloads a large number of official one-minute daily archives. Leave the Render worker running; the browser and computer may be closed.
+To create an earlier untouched round, enter both historical date fields in Step 1, then run Step 3 and Step 4 using **fresh staged** mode. Do not open validation or sealed-test downloads early.

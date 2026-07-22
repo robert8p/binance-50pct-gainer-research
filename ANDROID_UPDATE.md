@@ -1,34 +1,13 @@
-# Android upgrade from v2 to v3
+# Android/Termux upgrade from v3 to v4
 
-## 1. Apply the database migration
-
-Open `supabase/migrate_v2_to_v3.sql` from the extracted package, copy all text, paste it into the existing Supabase project's SQL Editor and run it.
-
-## 2. Replace local files
+Run the Supabase migration first, then replace your local repository files with the extracted v4 package and push:
 
 ```bash
 cd ~/binance-50pct-app
-unzip -o ~/storage/downloads/binance_3h_50pct_matched_controls_v3_0_0.zip
-```
-
-## 3. Commit and push
-
-```bash
+unzip -o ~/storage/downloads/binance_3h_50pct_ten_day_context_v4_0_0.zip
 git add .
-git commit -m "Upgrade Binance matched-control research app to v3"
-git push origin main
+git commit -m "Upgrade to v4 ten-day context"
+git push
 ```
 
-## 4. Verify Render
-
-Wait for both services to show **Live**, then open `/health` and confirm:
-
-```json
-{"status":"ok","version":"3.0.0"}
-```
-
-No new Render secrets are required.
-
-## 5. Queue controls
-
-Use the existing completed 63-event scan with five controls per event, ten prior days and horizons `15,30,60,120`.
+Wait for both Render services to redeploy and confirm `/health` reports version 4.0.0.
