@@ -9,6 +9,7 @@ from .config import Settings
 from .research import ResearchBuilder
 from .matched_controls import MatchedControlBuilder
 from .context import TenDayContextBuilder
+from .baseline_context import BaselineContextBuilder
 from .scanner import Scanner
 from .supabase import SupabaseClient
 
@@ -36,7 +37,7 @@ def _claim(db: SupabaseClient, table: str) -> dict | None:
 
 def _recover_interrupted_jobs(db: SupabaseClient) -> None:
     """Requeue jobs left running by a worker restart; all writes are idempotent."""
-    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs"):
+    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs", "binance_baseline_context_jobs"):
         db.update(
             table,
             {"status": "eq.running"},
@@ -57,6 +58,7 @@ def main() -> None:
     research = ResearchBuilder(db, binance, settings.temp_data_dir)
     matched_controls = MatchedControlBuilder(db, binance, settings.temp_data_dir)
     context_builder = TenDayContextBuilder(db, binance, settings.temp_data_dir)
+    baseline_context_builder = BaselineContextBuilder(db, binance, settings.temp_data_dir)
     _recover_interrupted_jobs(db)
     logger.info("Worker started; interrupted jobs recovered")
     while True:
@@ -155,6 +157,41 @@ def main() -> None:
                     logger.exception("Ten-day context job failed")
                     db.update(
                         "binance_context_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "failed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "error_message": str(exc)[:4000],
+                        },
+                    )
+                continue
+
+            baseline_context_job = _claim(db, "binance_baseline_context_jobs")
+            if baseline_context_job:
+                job_id = baseline_context_job["id"]
+                try:
+                    result = baseline_context_builder.run(baseline_context_job)
+                    has_warnings = result.get("failures", 0) > 0 or any(
+                        key != "pass" and value
+                        for key, value in (result.get("quality_report", {}).get("quality_counts", {}) or {}).items()
+                    ) or result.get("quality_report", {}).get("contaminated_controls", 0) > 0
+                    db.update(
+                        "binance_baseline_context_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "completed_with_warnings" if has_warnings else "completed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "samples_processed": result["samples_processed"],
+                            "feature_rows": result["feature_rows"],
+                            "continuation_rows": result["continuation_rows"],
+                            "failures": result["failures"],
+                            "result_json": result,
+                        },
+                    )
+                except Exception as exc:
+                    logger.exception("Baseline-aligned context job failed")
+                    db.update(
+                        "binance_baseline_context_jobs",
                         {"id": f"eq.{job_id}"},
                         {
                             "status": "failed",

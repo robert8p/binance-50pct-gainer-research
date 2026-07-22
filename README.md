@@ -4,48 +4,62 @@ A deployable GitHub, Render and Supabase application for studying Binance Spot c
 
 The app is historical research infrastructure. It does not place orders, connect to a Binance trading account or claim that historical associations are profitable.
 
-## Version 4.0.0
+## Version 5.0.0
 
-Version 4 retains the 60-day/custom-date surge scanner, positive-event archive and matched controls, then adds a **full ten-day context engine**.
+Version 5 corrects the principal alignment flaw found in the ten-day analysis.
 
-For every event and matched control, it calculates predictors using only completed one-minute bars before decision times 15, 30, 60 and 120 minutes before the anchor.
+Earlier context rows were measured backwards from the later +50% crossing. In most events, that meant the “15–120 minutes before” observations were already inside the surge. V5 adds a new **baseline-aligned context engine** that measures only information available before the minute containing the low from which the qualifying three-hour move began.
 
-## What the ten-day round measures
+The crossing-aligned v4 output remains available for audit continuity, but the new Step 5 output is the correct source for precursor research.
 
-Feature windows:
+## Two-stage design
+
+### 1. Precursor stage
+
+For every event and same-coin control, V5 creates snapshots:
 
 ```text
-15m, 30m, 1h, 2h, 3h, 6h, 12h,
-1d, 2d, 3d, 5d, 7d and 10d
+10d, 7d, 5d, 3d, 48h, 24h, 12h, 6h, 3h, 1h and 0m
+before the baseline minute
 ```
 
-Feature families include:
+At every snapshot it calculates the existing multi-timescale windows up to ten days. The offset-0 row ends at the final completed minute before the detected surge baseline.
 
-- returns, range position, distance from highs/lows, trend slope and trend consistency;
-- run-up, drawdown, recovery and return acceleration;
-- quote volume, trade count, average trade size and taker-buy ratio;
-- volatility and range compression/expansion;
-- daily price, volume and range trends;
-- one-minute shock counts, hourly volume spikes, breakout attempts and failed breakouts;
-- activity relative to the same UTC time during the prior seven days;
-- relative strength versus BTC, ETH, BNB and an equal-weight market proxy;
-- ten-day completeness and minimum entry liquidity.
+### 2. Continuation stage
 
-Columns beginning `outcome_` are diagnostics/labels and must never be used as predictors.
+The prior 15-minute momentum rule is preserved unchanged and evaluated separately 15 minutes before the +50% crossing. It is not presented as a predictor of surge initiation.
+
+## Symmetric control alignment
+
+Events use the scanner’s baseline minute. Each control receives a pseudo-baseline equal to:
+
+```text
+control anchor − matched event's baseline-to-cross duration in whole minutes
+```
+
+Both event and control baselines are therefore minute-level. Exact event aggregate-trade prices remain metadata/outcomes rather than asymmetric predictors.
+
+Every control is re-audited for an accidental 50% sequential low-to-later-high move inside its pseudo-event window. Contaminated controls are explicitly flagged and excluded from clean analysis.
+
+## Frozen hypotheses for the fresh round
+
+The app writes three preregistered precursor hypotheses into every package:
+
+1. Weak/flat prior week followed by one-day price and volume ignition.
+2. Coin-specific one-day acceleration relative to BTC, ETH and BNB.
+3. Volatility activation after a weak/flat prior week.
+
+Thresholds and the 15-minute continuation trigger are fixed in code and package metadata. They cannot be changed through the dashboard.
 
 ## Existing data versus fresh evidence
 
-The previously opened 63-event dataset can be processed in **exploratory reuse** mode. It is useful for discovering ten-day feature families, but it cannot prove a new rule because its validation and sealed splits have already been inspected.
+The May–July 2026 dataset must be run as **exploratory reuse** because all prior splits have been opened.
 
-For fresh evidence, v4 also supports fixed historical scan dates. The correct staged workflow is:
+Fresh staged mode requires:
 
-1. Queue an earlier historical surge scan using explicit start/end dates.
-2. Build same-coin matched controls.
-3. Queue ten-day context using **fresh staged** mode.
-4. Analyse discovery only.
-5. Fix candidate rules before opening validation.
-6. Open validation once without retuning.
-7. Keep sealed test unopened until the final rule is frozen.
+- an explicit earlier historical scan ending on or before **22 May 2026**;
+- matched controls built with the `180`-minute horizon included, so the full pseudo-event interval has contamination protection;
+- discovery, validation and sealed packages opened in sequence.
 
 ## Existing core definitions
 
@@ -62,29 +76,31 @@ A candidate is saleable when at least 500 quote units of seller-initiated aggreg
 - Supabase Postgres: jobs, events, controls and audit records.
 - Supabase Storage: private downloadable research packages.
 
-No Binance trading credentials are required. Public market-data endpoints and Binance's public archive are used.
+No Binance trading credentials are required.
 
 ## Upgrade
 
-Existing v3 users must run:
+Existing v4 users must run:
 
 ```text
-supabase/migrate_v3_to_v4.sql
+supabase/migrate_v4_to_v5.sql
 ```
 
-before deploying the v4 source files.
+before deploying the v5 source files.
 
 After deployment, `/health` should return:
 
 ```json
-{"status":"ok","version":"4.0.0"}
+{"status":"ok","version":"5.0.0"}
 ```
 
 Follow `WINDOWS_UPDATE.md` for the simplest Windows upgrade.
 
 ## Main limitations
 
-- Historical scans still begin with the current Binance Spot universe, so delisted coins can be absent.
-- Current Binance exchange tradability does not guarantee availability to a specific UK account or entity.
-- Ten-day matched associations are not executable strategies until continuously tested with fixed entry, exit, fees, slippage and cooldown rules.
+- Historical scans begin with the current Binance Spot universe, so delisted coins can be absent.
+- The event baseline is known retrospectively. Baseline alignment corrects causal ordering but does not itself tell a live scanner when to alert; any surviving rule must later be evaluated every minute.
+- A pseudo-baseline is a matched timing construct, not a claim that a control had a true latent surge start.
+- The offset-10-day snapshot needs another ten days of preceding feature history, so V5 may download roughly 20 days before the earliest baseline.
+- Associations remain non-tradeable until they survive fresh staged evidence and a continuous executable-entry backtest.
 - Samples are clustered by symbol and event; row counts overstate independent evidence.

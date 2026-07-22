@@ -1,32 +1,41 @@
-# Troubleshooting — v4.0.0
+# Troubleshooting — v5.0.0
 
 ## Dashboard fails immediately after upgrade
 
-Run `supabase/migrate_v3_to_v4.sql`. The v4 dashboard requires the new context tables.
+Run `supabase/migrate_v4_to_v5.sql`. The v5 dashboard queries the new baseline-context tables.
 
-## Context job remains queued
+## Baseline-context job remains queued
 
 Open the Render worker logs. Confirm the worker is Live and both Supabase variables are populated. Restart the worker; queued jobs are preserved.
 
-## Context job has many insufficient-history warnings
+## Fresh staged job fails immediately
 
-The symbol may have been newly listed or the archive may be incomplete. Do not impute missing minutes. Keep these rows flagged or analyse new listings separately.
+Fresh staged mode requires:
 
-## Historical scan rejects the dates
+- an explicit historical scan whose exclusive end date is no later than `2026-05-22`;
+- matched controls built with `180` included in the decision horizons.
 
-Both dates are required. The start is inclusive, the end is exclusive, the span must be 1–180 days, and the end cannot include a future UTC day.
+Recreate the matched-control job if its contamination-before value is only 120 minutes.
+
+## Job completes with contaminated-control warnings
+
+A control experienced an accidental 50% sequential low-to-later-high move between its pseudo-baseline and control anchor, or had incomplete data across that interval. The app flags it rather than silently treating it as a valid negative example.
+
+## Job has insufficient-history warnings
+
+The offset ten days before baseline also calculates up to ten days of preceding features. A new listing may therefore need about 20 days of prior history and can legitimately fail completeness checks. Do not impute missing minutes.
 
 ## Job is slow
 
-The ten-day job downloads and verifies one-minute archives for every event/control symbol plus BTC, ETH and BNB. The persistent cache makes subsequent runs faster. Do not queue duplicate jobs.
+V5 can require roughly 20 days of history before the earliest baseline and processes eleven snapshots per sample. The persistent cache makes subsequent runs faster. Do not queue duplicate jobs.
 
-## Which files should be shared for analysis?
+## Which files should be shared?
 
-For the existing dataset, share:
+For the existing dataset:
 
 ```text
-ten_day_context_index.zip
-ten_day_context_exploratory.zip
+baseline_context_index.zip
+baseline_context_exploratory.zip
 ```
 
-For a fresh staged round, share the index and discovery package first. Keep validation and sealed test unopened.
+For fresh staged evidence, share the index and discovery package first. Keep validation and sealed test unopened.

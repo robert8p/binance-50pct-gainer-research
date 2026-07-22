@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="4.0.0")
+app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="5.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "4.0.0"}
+    return {"status": "ok", "version": "5.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -44,10 +44,12 @@ def dashboard(request: Request) -> HTMLResponse:
     research = db.select("binance_research_jobs", order="created_at.desc", limit=25)
     matched_jobs = db.select("binance_matched_control_jobs", order="created_at.desc", limit=25)
     context_jobs = db.select("binance_context_jobs", order="created_at.desc", limit=25)
+    baseline_context_jobs = db.select("binance_baseline_context_jobs", order="created_at.desc", limit=25)
     heartbeat = db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1)
     files = db.select("binance_research_files", order="created_at.desc", limit=100)
     matched_files = db.select("binance_matched_control_files", order="created_at.desc", limit=100)
     context_files = db.select("binance_context_files", order="created_at.desc", limit=100)
+    baseline_context_files = db.select("binance_baseline_context_files", order="created_at.desc", limit=100)
     completed_matched_jobs = [
         x for x in matched_jobs if x["status"] in {"completed", "completed_with_warnings"}
     ]
@@ -64,12 +66,14 @@ def dashboard(request: Request) -> HTMLResponse:
             "research_jobs": research,
             "matched_jobs": matched_jobs,
             "context_jobs": context_jobs,
+            "baseline_context_jobs": baseline_context_jobs,
             "completed_matched_jobs": completed_matched_jobs,
             "completed_scans": completed_scans,
             "heartbeat": heartbeat[0] if heartbeat else None,
             "files": files,
             "matched_files": matched_files,
             "context_files": context_files,
+            "baseline_context_files": baseline_context_files,
         },
     )
 
@@ -230,6 +234,34 @@ def create_ten_day_context(
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/baseline-context")
+def create_baseline_context(
+    request: Request,
+    matched_control_job_id: str = Form(...),
+    research_mode: str = Form("exploratory_reuse"),
+    min_entry_notional: float = Form(500),
+) -> RedirectResponse:
+    _auth(request)
+    if research_mode not in {"exploratory_reuse", "fresh_staged"}:
+        raise HTTPException(400, "Invalid research mode")
+    if min_entry_notional < 0:
+        raise HTTPException(400, "min_entry_notional cannot be negative")
+    db.insert(
+        "binance_baseline_context_jobs",
+        {
+            "id": str(uuid.uuid4()),
+            "matched_control_job_id": matched_control_job_id,
+            "status": "queued",
+            "research_mode": research_mode,
+            "prior_days": 10,
+            "snapshot_offsets_minutes": [14400,10080,7200,4320,2880,1440,720,360,180,60,0],
+            "continuation_horizons_minutes": [15],
+            "min_entry_notional": min_entry_notional,
+        },
+    )
+    return RedirectResponse("/", status_code=303)
+
+
 def _csv_response(rows: list[dict[str, Any]], filename: str) -> StreamingResponse:
     output = io.StringIO()
     if rows:
@@ -321,6 +353,15 @@ def download_context_file(request: Request, file_id: str) -> RedirectResponse:
     return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
 
 
+@app.get("/baseline-context-files/{file_id}")
+def download_baseline_context_file(request: Request, file_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_baseline_context_files", filters={"id": f"eq.{file_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "Baseline-context file not found")
+    return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
+
+
 @app.get("/api/status")
 def api_status(request: Request) -> dict[str, Any]:
     _auth(request)
@@ -329,5 +370,6 @@ def api_status(request: Request) -> dict[str, Any]:
         "research_jobs": db.select("binance_research_jobs", order="created_at.desc", limit=20),
         "matched_control_jobs": db.select("binance_matched_control_jobs", order="created_at.desc", limit=20),
         "context_jobs": db.select("binance_context_jobs", order="created_at.desc", limit=20),
+        "baseline_context_jobs": db.select("binance_baseline_context_jobs", order="created_at.desc", limit=20),
         "worker": db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1),
     }

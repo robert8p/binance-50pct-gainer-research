@@ -19,7 +19,7 @@
 </head>
 <body><main>
   <h1>Binance 3-Hour 50% Surge Research</h1>
-  <p class="muted">v4.0 adds full ten-day context features and optional fixed historical scan dates for fresh validation rounds.</p>
+  <p class="muted">v5.0 aligns precursor research to the minute where the detected surge begins, while keeping the 15-minute continuation trigger separate.</p>
   <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative three-hour rolling window. The price only needs to touch the threshold.</p>
   <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not guarantee a fill at the threshold.</p>
 
@@ -63,7 +63,7 @@
         </select>
         <label>Same-coin controls per event</label><input name="controls_per_event" type="number" value="5" min="1" max="10">
         <label>Predictor-history days</label><input name="prior_days" type="number" value="10" min="1" max="30">
-        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120">
+        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120,180">
         <label>Minimum prior 5-minute quote volume for controls</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
         <button>Queue matched-control package</button>
       </form>
@@ -86,6 +86,24 @@
         <button>Queue ten-day context package</button>
       </form>
       <p class="muted small">For the already analysed 63-event job, choose exploratory only. Fresh staged mode is only valid for a newly collected historical job whose later packages have not been opened.</p>
+    </section>
+
+    <section class="card">
+      <h2>Step 5 — Build baseline-aligned context</h2>
+      <form method="post" action="/baseline-context">
+        <label>Completed matched-control job</label><select name="matched_control_job_id" required>
+          {% for job in completed_matched_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — {{ job.controls_created or 0 }} controls — {{ job.id[:8] }}</option>{% endfor %}
+        </select>
+        <label>Research treatment</label><select name="research_mode">
+          <option value="exploratory_reuse">Existing May–July data — exploratory alignment audit</option>
+          <option value="fresh_staged">Earlier untouched data — discovery/validation/sealed</option>
+        </select>
+        <label>Snapshots before baseline</label><input value="10d, 7d, 5d, 3d, 48h, 24h, 12h, 6h, 3h, 1h, baseline" disabled>
+        <label>Frozen continuation check</label><input value="15 minutes before the +50% crossing" disabled>
+        <label>Minimum prior 5-minute quote volume</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
+        <button>Queue baseline-aligned package</button>
+      </form>
+      <p class="muted small">For the existing 63-event job, choose exploratory. Fresh staged mode requires a new explicit historical scan ending on or before 22 May 2026 and matched controls built with the 180-minute horizon included.</p>
     </section>
   </div>
 
@@ -115,6 +133,24 @@
     <tbody>{% for job in matched_jobs %}<tr>
       <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
       <td>{{ job.events_processed or 0 }}/{{ job.events_total or 0 }}</td><td>{{ job.controls_created or 0 }}/{{ job.controls_target or 0 }}</td><td>{{ job.feature_rows or 0 }}</td><td>{{ job.failures or 0 }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
+
+
+
+  <section class="card"><h2>Baseline-aligned context jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Status</th><th>Mode</th><th>Samples</th><th>Baseline rows</th><th>Continuation rows</th><th>Failures</th></tr></thead>
+    <tbody>{% for job in baseline_context_jobs %}<tr>
+      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td><td>{{ job.research_mode }}</td>
+      <td>{{ job.samples_processed or 0 }}/{{ job.samples_total or 0 }}</td><td>{{ job.feature_rows or 0 }}</td><td>{{ job.continuation_rows or 0 }}</td><td>{{ job.failures or 0 }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
+
+  <section class="card"><h2>Baseline-aligned downloads</h2><p class="warning">The existing May–July package is exploratory. For fresh staged evidence, do not open validation or sealed test early.</p><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
+    <tbody>{% for file in baseline_context_files %}<tr>
+      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index/exploratory" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>
+      <td>{{ file.size_bytes }}</td><td><a href="/baseline-context-files/{{ file.id }}">temporary link</a></td>
     </tr>{% endfor %}</tbody>
   </table></div></section>
 

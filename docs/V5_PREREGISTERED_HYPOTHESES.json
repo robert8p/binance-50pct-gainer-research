@@ -1,0 +1,38 @@
+{
+  "version": "v5_baseline_aligned_hypotheses_1",
+  "created_before_fresh_period_is_opened": true,
+  "primary_evaluation_snapshot": "baseline_start (offset 0; bars end one minute before baseline)",
+  "hypotheses": [
+    {
+      "id": "H1_WEAK_BASE_IGNITION",
+      "description": "Weak/flat prior week followed by one-day price and volume ignition.",
+      "rule": "ret_prior_1d_to_7d_pct <= 5 AND ret_1440m_pct >= 5 AND volume_last1d_vs_prior2d_daily_rate >= 1.5"
+    },
+    {
+      "id": "H2_RELATIVE_ACCELERATION",
+      "description": "Coin-specific one-day strength and acceleration relative to BTC/ETH/BNB proxy.",
+      "rule": "ret_1440m_minus_market_proxy_pct_points >= 5 AND return_acceleration_1d_vs_prior_2d_pct_points_per_day >= 5"
+    },
+    {
+      "id": "H3_VOLATILITY_REVERSAL",
+      "description": "Volatility activation after a weak/flat prior week.",
+      "rule": "volatility_1d_to_7d_ratio >= 0.4 AND ret_prior_1d_to_7d_pct <= 5"
+    }
+  ],
+  "frozen_continuation_trigger": {
+    "horizon_minutes_before_cross": 15,
+    "entry_liquidity_required": true,
+    "at_least_three_of": [
+      "ret_15m_pct >= 0.9",
+      "quote_volume_15m_vs_prior_7d_same_time >= 12",
+      "position_in_1440m_range >= 0.74",
+      "max_runup_15m_pct >= 3.3"
+    ]
+  },
+  "integrity": [
+    "No threshold may be changed after fresh discovery is inspected.",
+    "Validation may be opened once after candidate selection is frozen.",
+    "Sealed test remains unopened until the complete context-plus-trigger rule is frozen.",
+    "All columns beginning outcome_ are excluded from predictors."
+  ]
+}
