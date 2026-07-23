@@ -185,6 +185,24 @@ class SupabaseClient:
                 time.sleep(min(30, 2 ** attempt))
         raise SupabaseError(f"Storage upload failed after retries: {last_error}")
 
+
+    def download_file(self, path: str, destination: Path) -> None:
+        """Download a private Storage object using the server-side key."""
+        headers = {"apikey": self.key}
+        if not self.key.startswith(("sb_secret_", "sb_publishable_")):
+            headers["Authorization"] = f"Bearer {self.key}"
+        url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
+        response = self._request("GET", url, headers=headers, retries=5, stream=True)
+        if response.status_code != 200:
+            raise SupabaseError(
+                f"Storage download failed ({response.status_code}): {response.text[:1000]}"
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    handle.write(chunk)
+
     def signed_url(self, path: str, expires_in: int = 3600) -> str:
         response = self._request(
             "POST",

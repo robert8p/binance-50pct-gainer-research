@@ -1,33 +1,41 @@
-# Deployment — v5.0.0
+# Deployment and operating sequence
 
-## Existing v4 installation
+V6 uses the existing GitHub, Render and Supabase deployment. Run `supabase/migrate_v5_to_v6.sql`, upload the new source files and confirm `/health` reports version 6.0.0.
 
-1. In Supabase, run `supabase/migrate_v4_to_v5.sql`.
-2. Upload all v5 files to the existing GitHub repository, replacing files with the same names.
-3. Commit the changes.
-4. Wait for both Render services to redeploy.
-5. Open `/health`; confirm `{"status":"ok","version":"5.0.0"}`.
-6. Confirm the dashboard shows a recent worker heartbeat and **Step 5 — Build baseline-aligned context**.
+## Required services
 
-Do not deploy the v5 web service before running the migration: the dashboard queries the new baseline-context tables at startup.
+- Render web service: dashboard
+- Render Starter worker: historical processing
+- Render 10 GB persistent disk: temporary verified archives
+- Supabase Postgres and private Storage bucket
 
-## Existing 63-event dataset
-
-Choose the completed matched-control job and select:
+## Required environment variables
 
 ```text
-Research treatment: Existing May–July data — exploratory alignment audit
-Minimum 5-minute quote volume: 500
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+APP_PASSWORD
+SUPABASE_STORAGE_BUCKET=binance-gainer-research
+TEMP_DATA_DIR=/var/data
+BINANCE_API_BASE_URLS=https://api.binance.com,https://data-api.binance.vision
+POLL_SECONDS=10
 ```
 
-Download `baseline_context_index.zip` and `baseline_context_exploratory.zip` after completion.
+Use a Supabase server-side `sb_secret_...` key or a legacy service-role JWT. Never place it in GitHub.
 
-## Fresh earlier historical round
+## Fixed V6 protocol
 
-1. Queue an explicit historical scan ending no later than 22 May 2026.
-2. Keep threshold 50%, rolling window three hours and saleability 500/300 seconds.
-3. Build five matched controls per event with horizons `15,30,60,120,180`.
-4. Queue Step 5 and choose **Earlier untouched data — discovery/validation/sealed**.
-5. Download the index and discovery package only.
+The recommended fresh-confirmation scan is 2026-01-01 through 2026-03-01 exclusive. The sealed continuous backtest is 2026-03-01 through 2026-05-22 exclusive.
 
-Fresh staged mode rejects a matched-control job without 180-minute pre-anchor contamination protection or a scan that overlaps the already opened May–July observations.
+The worker refuses to run the backtest unless:
+
+- the linked confirmation job completed and passed;
+- the backtest does not overlap the confirmation source scan;
+- the end date is no later than 2026-05-22;
+- all execution parameters retain their frozen values.
+
+## Operational notes
+
+The continuous backtest processes symbols sequentially and removes each symbol's archive cache afterwards to stay within the 10 GB disk. A worker restart requeues the job safely, but may require historical files to be downloaded again.
+
+The dashboard does not auto-refresh. Refresh the browser to see progress.

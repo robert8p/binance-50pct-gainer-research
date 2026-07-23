@@ -1,43 +1,37 @@
-# Simple Windows upgrade from v4 to v5
+# Simple Windows upgrade to V6
 
-## 1. Download and extract
+## 1. Update Supabase
 
-Download the v5 ZIP, right-click it in **Downloads**, select **Extract All**, and open the extracted folder.
-
-## 2. Update Supabase first
-
-1. Open the extracted `supabase` folder.
-2. Open `migrate_v4_to_v5.sql` in Notepad.
+1. Extract the V6 ZIP.
+2. Open `supabase\migrate_v5_to_v6.sql` in Notepad.
 3. Press `Ctrl+A`, then `Ctrl+C`.
-4. In Supabase, open **SQL Editor → New query**.
+4. Open **Supabase → SQL Editor → New query**.
 5. Paste and select **Run**.
-6. Confirm there is no red error.
 
-This migration is additive and does not remove your existing scans or packages.
+The migration is additive and keeps all prior scans and research packages.
 
-## 3. Replace the GitHub files
+## 2. Update GitHub
 
 1. Open the existing GitHub repository.
 2. Select **Add file → Upload files**.
-3. In Windows Explorer, select everything inside the extracted v5 folder.
-4. Drag the selected files into GitHub.
-5. Tick **Replace files with the same name** if GitHub asks.
-6. Commit with:
+3. Drag everything from inside the extracted V6 folder onto the upload page.
+4. Confirm replacement when GitHub shows existing files.
+5. Commit with:
 
 ```text
-Upgrade to v5 baseline-aligned context
+Upgrade to v6 fresh confirmation and continuous backtest
 ```
 
-## 4. Wait for Render
+## 3. Check Render
 
-Both services should redeploy automatically:
+Wait for both services to redeploy:
 
 ```text
 binance-50pct-scanner-web
 binance-50pct-scanner-worker
 ```
 
-When both are Live, open:
+Open:
 
 ```text
 https://YOUR-RENDER-APP.onrender.com/health
@@ -46,42 +40,79 @@ https://YOUR-RENDER-APP.onrender.com/health
 Expected result:
 
 ```json
-{"status":"ok","version":"5.0.0"}
+{"status":"ok","version":"6.0.0"}
 ```
 
-## 5. Run the existing-data alignment audit
+## 4. Run the fresh confirmation dataset
 
-1. Open the main app dashboard.
-2. Find **Step 5 — Build baseline-aligned context**.
-3. Select the matched-control job that produced the 63-event/301-control package.
-4. Select **Existing May–July data — exploratory alignment audit**.
-5. Leave the minimum five-minute quote volume at `500`.
-6. Select **Queue baseline-aligned package**.
-7. Refresh periodically until complete.
-8. Download:
+### Step 1 — Fresh scan
+
+Queue a scan with:
 
 ```text
-baseline_context_index.zip
-baseline_context_exploratory.zip
+Historical start: 2026-01-01
+Historical end, exclusive: 2026-03-01
+Threshold: 50
+Rolling window: 3 hours
+Minimum exit notional: 500
+Saleability window: 300 seconds
 ```
 
-Share both files for analysis.
+### Step 3 — Matched controls
 
-## 6. Create the fresh earlier round after the audit
-
-Use these fixed historical dates in Step 1:
+After the scan completes, queue matched controls with:
 
 ```text
-Start date: 2026-01-01
-End date exclusive: 2026-05-22
+Controls per event: 5
+Predictor-history days: 10
+Decision horizons: 15,30,60,120,180
+Minimum prior five-minute quote volume: 500
 ```
 
-Then:
+The `180` horizon is mandatory for contamination protection.
 
-1. Run the 50%/three-hour scan.
-2. Build five matched controls per event.
-3. Keep the Step 3 horizons as `15,30,60,120,180`.
-4. In Step 5 select the new matched-control job.
-5. Choose **Earlier untouched data — discovery/validation/sealed**.
-6. Download the index and **discovery** package only.
-7. Do not open validation or sealed test until instructed.
+### Step 5 — Baseline context
+
+After matched controls complete:
+
+```text
+Research treatment: Earlier untouched data — discovery/validation/sealed
+Minimum prior five-minute quote volume: 500
+```
+
+### Step 6 — Automatic confirmation
+
+Select the completed fresh baseline-context job and choose:
+
+```text
+Run automatic fresh confirmation
+```
+
+Do not manually download or inspect its discovery, validation or sealed files first.
+
+## 5. Interpret Step 6
+
+- **PASS:** Step 7 becomes available.
+- **FAIL:** Stop. Do not change H1 thresholds and rerun while calling it confirmation.
+
+Download `fresh_confirmation_results.zip` and upload it to ChatGPT.
+
+## 6. Run the sealed continuous backtest only after PASS
+
+Use:
+
+```text
+Start: 2026-03-01
+End, exclusive: 2026-05-22
+Quote preference: USDT,USDC,FDUSD
+```
+
+All trading parameters are fixed automatically.
+
+The job can take many hours because it evaluates every completed minute across the current Binance Spot universe and downloads official aggregate-trade archives for candidate signals.
+
+After completion, download and upload:
+
+```text
+continuous_backtest_results.zip
+```

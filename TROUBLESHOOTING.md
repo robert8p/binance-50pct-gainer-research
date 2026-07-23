@@ -1,41 +1,58 @@
-# Troubleshooting — v5.0.0
+# Troubleshooting — V6.0.0
 
-## Dashboard fails immediately after upgrade
+## Dashboard fails after upgrade
 
-Run `supabase/migrate_v4_to_v5.sql`. The v5 dashboard queries the new baseline-context tables.
+Run `supabase/migrate_v5_to_v6.sql` in Supabase. The V6 dashboard queries the new confirmation and backtest tables.
 
-## Baseline-context job remains queued
+## Confirmation job fails
 
-Open the Render worker logs. Confirm the worker is Live and both Supabase variables are populated. Restart the worker; queued jobs are preserved.
+Confirm the source baseline-context job:
 
-## Fresh staged job fails immediately
+- completed successfully;
+- used `fresh_staged` mode;
+- contains discovery, validation and sealed packages;
+- came from an explicit historical scan ending no later than 22 May 2026.
 
-Fresh staged mode requires:
+Do not use the already-opened May–July exploratory job.
 
-- an explicit historical scan whose exclusive end date is no later than `2026-05-22`;
-- matched controls built with `180` included in the decision horizons.
+## Backtest button has no selectable job
 
-Recreate the matched-control job if its contamination-before value is only 120 minutes.
+Step 7 only lists completed Step 6 jobs whose decision is **PASS**. A failed confirmation deliberately locks the backtest.
 
-## Job completes with contaminated-control warnings
+## Backtest rejects the dates
 
-A control experienced an accidental 50% sequential low-to-later-high move between its pseudo-baseline and control anchor, or had incomplete data across that interval. The app flags it rather than silently treating it as a valid negative example.
+The backtest must:
 
-## Job has insufficient-history warnings
+- start on or after the confirmation source scan's exclusive end date;
+- end no later than 22 May 2026;
+- use a non-empty period.
 
-The offset ten days before baseline also calculates up to ten days of preceding features. A new listing may therefore need about 20 days of prior history and can legitimately fail completeness checks. Do not impute missing minutes.
+The recommended dates are 1 March–22 May 2026 after a 1 January–1 March confirmation scan.
 
-## Job is slow
+## Backtest is slow
 
-V5 can require roughly 20 days of history before the earliest baseline and processes eleven snapshots per sample. The persistent cache makes subsequent runs faster. Do not queue duplicate jobs.
+This is expected. It evaluates every completed minute across the current canonical Binance Spot universe and downloads official daily archives. The worker processes symbols sequentially to control disk usage.
 
-## Which files should be shared?
+Do not queue a duplicate job. Refresh the dashboard manually to view progress.
 
-For the existing dataset:
+## Many entry or exit fills fail
+
+This is a research result, not necessarily a software failure. The app requires historical aggressive-side executions to prove a 500-quote-unit entry and full exit. Check `aggregate_trade_coverage.csv` to distinguish missing archives from insufficient executed liquidity.
+
+## Worker restarts
+
+Running jobs are automatically requeued. To keep the 10 GB disk bounded, V6 removes per-symbol cache files after processing, so a restarted long backtest may redownload some files.
+
+## Files to share
+
+After Step 6:
 
 ```text
-baseline_context_index.zip
-baseline_context_exploratory.zip
+fresh_confirmation_results.zip
 ```
 
-For fresh staged evidence, share the index and discovery package first. Keep validation and sealed test unopened.
+After a passing Step 6 and completed Step 7:
+
+```text
+continuous_backtest_results.zip
+```

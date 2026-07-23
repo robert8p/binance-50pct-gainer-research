@@ -1,0 +1,66 @@
+{
+  "version": "6.0.0",
+  "created_before_fresh_results_are_opened": true,
+  "fresh_confirmation_window_recommended": {
+    "start_inclusive": "2026-01-01",
+    "end_exclusive": "2026-03-01"
+  },
+  "sealed_continuous_backtest_window_recommended": {
+    "start_inclusive": "2026-03-01",
+    "end_exclusive": "2026-05-22"
+  },
+  "primary_precursor": {
+    "id": "H1_WEAK_BASE_IGNITION",
+    "rule": [
+      "return from one to seven days earlier <= 5%",
+      "latest 24-hour return >= 5%",
+      "latest one-day quote volume >= 1.5 times the daily rate of the preceding two days"
+    ],
+    "evaluation_population": [
+      "baseline offset 0",
+      "feature_quality_status pass",
+      "entry_liquidity_pass true at 500 quote units",
+      "uncontaminated matched controls"
+    ]
+  },
+  "fresh_confirmation_acceptance": {
+    "minimum_evaluable_events": 15,
+    "minimum_event_signal_rate": 0.25,
+    "maximum_control_signal_rate": 0.15,
+    "minimum_event_to_control_rate_ratio": 2.0,
+    "maximum_matched_permutation_p": 0.05,
+    "minimum_unique_event_symbols_hit": 5,
+    "sealed_event_rate_must_exceed_sealed_control_rate": true,
+    "threshold_retuning_permitted": false
+  },
+  "continuation_trigger": {
+    "arm_window_minutes": 180,
+    "minimum_components": 3,
+    "components": [
+      "15-minute return >= 0.9%",
+      "15-minute quote volume >= 12 times prior-seven-day same-time median",
+      "position within 24-hour range >= 0.74",
+      "15-minute maximum run-up >= 3.3%"
+    ],
+    "minimum_prior_five_minute_quote_volume": 500
+  },
+  "execution": {
+    "position_quote_notional": 500,
+    "take_profit_pct": 15,
+    "stop_loss_pct": 5,
+    "maximum_hold_minutes": 180,
+    "entry_fill_window_seconds": 60,
+    "exit_fill_window_seconds": 300,
+    "fee_bps_each_side": 10,
+    "maximum_filled_entries_per_utc_day": 5,
+    "symbol_cooldown_minutes": 180
+  },
+  "integrity": [
+    "No parameter may be changed after fresh results are viewed.",
+    "The continuous backtest is unavailable unless fresh confirmation passes.",
+    "The backtest period cannot overlap the fresh-confirmation source scan.",
+    "All signals use completed one-minute bars only.",
+    "Entries and exits are proven using historical aggregate trades.",
+    "Current-tradeable-universe survivorship bias must be reported."
+  ]
+}

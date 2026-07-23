@@ -1,6 +1,6 @@
 # Official source references
 
-The v3 package was checked against these official sources in July 2026:
+The v6 package was checked against these official sources in July 2026:
 
 - Binance Spot REST API: `https://developers.binance.com/en/docs/products/spot/rest-api`
 - Binance official Spot API documentation repository: `https://github.com/binance/binance-spot-api-docs`

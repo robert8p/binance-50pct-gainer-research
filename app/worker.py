@@ -10,6 +10,8 @@ from .research import ResearchBuilder
 from .matched_controls import MatchedControlBuilder
 from .context import TenDayContextBuilder
 from .baseline_context import BaselineContextBuilder
+from .confirmation import FreshConfirmationBuilder
+from .backtest import ContinuousBacktestBuilder
 from .scanner import Scanner
 from .supabase import SupabaseClient
 
@@ -37,7 +39,7 @@ def _claim(db: SupabaseClient, table: str) -> dict | None:
 
 def _recover_interrupted_jobs(db: SupabaseClient) -> None:
     """Requeue jobs left running by a worker restart; all writes are idempotent."""
-    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs", "binance_baseline_context_jobs"):
+    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs", "binance_baseline_context_jobs", "binance_confirmation_jobs", "binance_backtest_jobs"):
         db.update(
             table,
             {"status": "eq.running"},
@@ -59,6 +61,8 @@ def main() -> None:
     matched_controls = MatchedControlBuilder(db, binance, settings.temp_data_dir)
     context_builder = TenDayContextBuilder(db, binance, settings.temp_data_dir)
     baseline_context_builder = BaselineContextBuilder(db, binance, settings.temp_data_dir)
+    confirmation_builder = FreshConfirmationBuilder(db, settings.temp_data_dir)
+    backtest_builder = ContinuousBacktestBuilder(db, binance, settings.temp_data_dir)
     _recover_interrupted_jobs(db)
     logger.info("Worker started; interrupted jobs recovered")
     while True:
@@ -192,6 +196,73 @@ def main() -> None:
                     logger.exception("Baseline-aligned context job failed")
                     db.update(
                         "binance_baseline_context_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "failed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "error_message": str(exc)[:4000],
+                        },
+                    )
+                continue
+
+            confirmation_job = _claim(db, "binance_confirmation_jobs")
+            if confirmation_job:
+                job_id = confirmation_job["id"]
+                try:
+                    result = confirmation_builder.run(confirmation_job)
+                    db.update(
+                        "binance_confirmation_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "completed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "passed": result["passed"],
+                            "events_evaluable": result["events_evaluable"],
+                            "controls_evaluable": result["controls_evaluable"],
+                            "event_hits": result["event_hits"],
+                            "control_hits": result["control_hits"],
+                            "event_rate": result["event_rate"],
+                            "control_rate": result["control_rate"],
+                            "matched_permutation_p": result["matched_permutation_p"],
+                            "unique_event_symbols_hit": result["unique_event_symbols_hit"],
+                            "result_json": result,
+                        },
+                    )
+                except Exception as exc:
+                    logger.exception("Fresh confirmation job failed")
+                    db.update(
+                        "binance_confirmation_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "failed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "error_message": str(exc)[:4000],
+                        },
+                    )
+                continue
+
+            backtest_job = _claim(db, "binance_backtest_jobs")
+            if backtest_job:
+                job_id = backtest_job["id"]
+                try:
+                    result = backtest_builder.run(backtest_job)
+                    db.update(
+                        "binance_backtest_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "completed_with_warnings" if result.get("failures", 0) else "completed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "symbols_processed": result["symbols_processed"],
+                            "candidate_signals": result["candidate_signals"],
+                            "completed_trades": result["completed_trades"],
+                            "failures": result["failures"],
+                            "result_json": result,
+                        },
+                    )
+                except Exception as exc:
+                    logger.exception("Continuous backtest job failed")
+                    db.update(
+                        "binance_backtest_jobs",
                         {"id": f"eq.{job_id}"},
                         {
                             "status": "failed",

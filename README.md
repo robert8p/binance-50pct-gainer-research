@@ -1,106 +1,105 @@
 # Binance 3-Hour 50% Surge Research App
 
-A deployable GitHub, Render and Supabase application for studying Binance Spot coins that rose at least **50% within three hours** and were demonstrably saleable after crossing.
+Historical research infrastructure for Binance Spot coins that rose at least **50% within three hours** and were demonstrably saleable after the crossing.
 
-The app is historical research infrastructure. It does not place orders, connect to a Binance trading account or claim that historical associations are profitable.
+The app does not connect to a Binance trading account or place orders.
 
-## Version 5.0.0
+## Version 6.0.0
 
-Version 5 corrects the principal alignment flaw found in the ten-day analysis.
+V6 adds the two tests required after the baseline-aligned exploratory analysis:
 
-Earlier context rows were measured backwards from the later +50% crossing. In most events, that meant the “15–120 minutes before” observations were already inside the surge. V5 adds a new **baseline-aligned context engine** that measures only information available before the minute containing the low from which the qualifying three-hour move began.
+1. **Automatic fresh historical confirmation** of the frozen H1 precursor.
+2. **A continuous, executable-entry historical backtest** that is unlocked only when confirmation passes.
 
-The crossing-aligned v4 output remains available for audit continuity, but the new Step 5 output is the correct source for precursor research.
+The preferred evidence sequence is fixed before results are opened:
 
-## Two-stage design
+- Fresh confirmation: **1 January–1 March 2026**.
+- Sealed continuous backtest: **1 March–22 May 2026**.
 
-### 1. Precursor stage
+These periods do not overlap the already opened May–July dataset.
 
-For every event and same-coin control, V5 creates snapshots:
+## Frozen precursor: H1 weak-base ignition
+
+At every candidate baseline, H1 requires:
+
+- return during the earlier one-to-seven-day period no higher than **+5%**;
+- latest 24-hour return at least **+5%**;
+- latest one-day quote volume at least **1.5×** the daily rate of the preceding two days.
+
+Fresh confirmation uses only:
+
+- offset-0 baseline rows;
+- quality-pass data;
+- at least 500 quote units of prior five-minute liquidity;
+- uncontaminated same-coin controls.
+
+The app automatically opens all staged packages only after the rule and acceptance criteria have been frozen in code. No dashboard field can retune the thresholds.
+
+## Frozen confirmation criteria
+
+H1 must achieve all of the following:
+
+- at least 15 evaluable surge events;
+- event signal rate at least 25%;
+- control signal rate no more than 15%;
+- event/control rate ratio at least 2.0;
+- matched permutation p-value no more than 0.05;
+- at least five event symbols detected;
+- event rate above control rate in the sealed split.
+
+A failed confirmation does not unlock the continuous backtest.
+
+## Continuous two-stage backtest
+
+After every completed one-minute bar:
+
+1. H1 becomes true on a rising edge and arms the coin for three hours.
+2. The unchanged late-momentum trigger must occur during that arm window.
+3. Entry begins only after the completed trigger minute.
+4. Historical buyer-initiated aggregate trades must prove a 500-quote-unit entry within 60 seconds.
+5. Exit uses historical seller-initiated aggregate trades.
+
+The fixed trade specification is:
+
+- position: 500 quote units;
+- take profit: +15%;
+- stop loss: −5%;
+- maximum hold: three hours;
+- exit-fill window: five minutes;
+- fees: 0.10% on entry and exit;
+- maximum five filled entries per UTC day;
+- 180-minute symbol cooldown after exit or failed execution.
+
+The output includes signal frequency, completed trades, fill failures, expectancy, profit factor, drawdown, consecutive losses, symbol concentration, fees and slippage.
+
+## Official data
+
+The application uses Binance public Spot market-data endpoints and Binance's official daily archive for one-minute klines and aggregate trades. Archive checksums are verified when Binance publishes them.
+
+No Binance API key is required.
+
+## Upgrade from V5
+
+Run:
 
 ```text
-10d, 7d, 5d, 3d, 48h, 24h, 12h, 6h, 3h, 1h and 0m
-before the baseline minute
+supabase/migrate_v5_to_v6.sql
 ```
 
-At every snapshot it calculates the existing multi-timescale windows up to ten days. The offset-0 row ends at the final completed minute before the detected surge baseline.
+Then replace the GitHub repository files with V6 and wait for both Render services to redeploy.
 
-### 2. Continuation stage
-
-The prior 15-minute momentum rule is preserved unchanged and evaluated separately 15 minutes before the +50% crossing. It is not presented as a predictor of surge initiation.
-
-## Symmetric control alignment
-
-Events use the scanner’s baseline minute. Each control receives a pseudo-baseline equal to:
-
-```text
-control anchor − matched event's baseline-to-cross duration in whole minutes
-```
-
-Both event and control baselines are therefore minute-level. Exact event aggregate-trade prices remain metadata/outcomes rather than asymmetric predictors.
-
-Every control is re-audited for an accidental 50% sequential low-to-later-high move inside its pseudo-event window. Contaminated controls are explicitly flagged and excluded from clean analysis.
-
-## Frozen hypotheses for the fresh round
-
-The app writes three preregistered precursor hypotheses into every package:
-
-1. Weak/flat prior week followed by one-day price and volume ignition.
-2. Coin-specific one-day acceleration relative to BTC, ETH and BNB.
-3. Volatility activation after a weak/flat prior week.
-
-Thresholds and the 15-minute continuation trigger are fixed in code and package metadata. They cannot be changed through the dashboard.
-
-## Existing data versus fresh evidence
-
-The May–July 2026 dataset must be run as **exploratory reuse** because all prior splits have been opened.
-
-Fresh staged mode requires:
-
-- an explicit earlier historical scan ending on or before **22 May 2026**;
-- matched controls built with the `180`-minute horizon included, so the full pseudo-event interval has contamination protection;
-- discovery, validation and sealed packages opened in sequence.
-
-## Existing core definitions
-
-A surge is the earliest later-minute high at least 50% above an eligible prior-minute low within the conservative three-hour rolling window. The price only needs to touch the threshold.
-
-A candidate is saleable when at least 500 quote units of seller-initiated aggregate trades execute at any price during the five minutes following the exact crossing trade.
-
-## Infrastructure
-
-- GitHub: source control and automated tests.
-- Render web service: password-protected dashboard.
-- Render worker: scans and research jobs.
-- Render persistent disk: verified archive cache and restart recovery.
-- Supabase Postgres: jobs, events, controls and audit records.
-- Supabase Storage: private downloadable research packages.
-
-No Binance trading credentials are required.
-
-## Upgrade
-
-Existing v4 users must run:
-
-```text
-supabase/migrate_v4_to_v5.sql
-```
-
-before deploying the v5 source files.
-
-After deployment, `/health` should return:
+The health route should show:
 
 ```json
-{"status":"ok","version":"5.0.0"}
+{"status":"ok","version":"6.0.0"}
 ```
 
-Follow `WINDOWS_UPDATE.md` for the simplest Windows upgrade.
+Follow `WINDOWS_UPDATE.md` for the simplest route.
 
-## Main limitations
+## Material limitations
 
-- Historical scans begin with the current Binance Spot universe, so delisted coins can be absent.
-- The event baseline is known retrospectively. Baseline alignment corrects causal ordering but does not itself tell a live scanner when to alert; any surviving rule must later be evaluated every minute.
-- A pseudo-baseline is a matched timing construct, not a claim that a control had a true latent surge start.
-- The offset-10-day snapshot needs another ten days of preceding feature history, so V5 may download roughly 20 days before the earliest baseline.
-- Associations remain non-tradeable until they survive fresh staged evidence and a continuous executable-entry backtest.
-- Samples are clustered by symbol and event; row counts overstate independent evidence.
+- The historical universe begins with coins tradeable on Binance when the job runs. Delisted historical coins are absent, creating survivorship bias.
+- Aggregate executed trades are a defensible fill proxy, not a reconstruction of historical order-book depth.
+- Current Binance availability does not guarantee availability to a particular UK account or entity.
+- Backtest results do not guarantee future performance.
+- One fixed exit specification is tested. It must not be changed after seeing the result and then described as sealed evidence.

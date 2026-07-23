@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="5.0.0")
+app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="6.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "5.0.0"}
+    return {"status": "ok", "version": "6.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -45,11 +45,22 @@ def dashboard(request: Request) -> HTMLResponse:
     matched_jobs = db.select("binance_matched_control_jobs", order="created_at.desc", limit=25)
     context_jobs = db.select("binance_context_jobs", order="created_at.desc", limit=25)
     baseline_context_jobs = db.select("binance_baseline_context_jobs", order="created_at.desc", limit=25)
+    confirmation_jobs = db.select("binance_confirmation_jobs", order="created_at.desc", limit=25)
+    backtest_jobs = db.select("binance_backtest_jobs", order="created_at.desc", limit=25)
     heartbeat = db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1)
     files = db.select("binance_research_files", order="created_at.desc", limit=100)
     matched_files = db.select("binance_matched_control_files", order="created_at.desc", limit=100)
     context_files = db.select("binance_context_files", order="created_at.desc", limit=100)
     baseline_context_files = db.select("binance_baseline_context_files", order="created_at.desc", limit=100)
+    confirmation_files = db.select("binance_confirmation_files", order="created_at.desc", limit=100)
+    backtest_files = db.select("binance_backtest_files", order="created_at.desc", limit=100)
+    completed_fresh_baseline_jobs = [
+        x for x in baseline_context_jobs
+        if x["status"] in {"completed", "completed_with_warnings"} and x.get("research_mode") == "fresh_staged"
+    ]
+    passed_confirmation_jobs = [
+        x for x in confirmation_jobs if x.get("status") == "completed" and bool(x.get("passed"))
+    ]
     completed_matched_jobs = [
         x for x in matched_jobs if x["status"] in {"completed", "completed_with_warnings"}
     ]
@@ -67,6 +78,10 @@ def dashboard(request: Request) -> HTMLResponse:
             "matched_jobs": matched_jobs,
             "context_jobs": context_jobs,
             "baseline_context_jobs": baseline_context_jobs,
+            "confirmation_jobs": confirmation_jobs,
+            "backtest_jobs": backtest_jobs,
+            "completed_fresh_baseline_jobs": completed_fresh_baseline_jobs,
+            "passed_confirmation_jobs": passed_confirmation_jobs,
             "completed_matched_jobs": completed_matched_jobs,
             "completed_scans": completed_scans,
             "heartbeat": heartbeat[0] if heartbeat else None,
@@ -74,6 +89,8 @@ def dashboard(request: Request) -> HTMLResponse:
             "matched_files": matched_files,
             "context_files": context_files,
             "baseline_context_files": baseline_context_files,
+            "confirmation_files": confirmation_files,
+            "backtest_files": backtest_files,
         },
     )
 
@@ -262,6 +279,76 @@ def create_baseline_context(
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/fresh-confirmation")
+def create_fresh_confirmation(
+    request: Request,
+    baseline_context_job_id: str = Form(...),
+) -> RedirectResponse:
+    _auth(request)
+    rows = db.select(
+        "binance_baseline_context_jobs",
+        filters={"id": f"eq.{baseline_context_job_id}"},
+        limit=1,
+    )
+    if not rows or rows[0].get("status") not in {"completed", "completed_with_warnings"}:
+        raise HTTPException(400, "Select a completed baseline-context job")
+    if rows[0].get("research_mode") != "fresh_staged":
+        raise HTTPException(400, "Fresh confirmation requires a fresh_staged baseline-context job")
+    db.insert(
+        "binance_confirmation_jobs",
+        {
+            "id": str(uuid.uuid4()),
+            "baseline_context_job_id": baseline_context_job_id,
+            "status": "queued",
+            "protocol_version": "v6_h1_fresh_confirmation_1",
+        },
+    )
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/continuous-backtest")
+def create_continuous_backtest(
+    request: Request,
+    confirmation_job_id: str = Form(...),
+    window_start_date: str = Form("2026-03-01"),
+    window_end_date_exclusive: str = Form("2026-05-22"),
+    quote_assets: str = Form("USDT,USDC,FDUSD"),
+) -> RedirectResponse:
+    _auth(request)
+    confirmation = db.select(
+        "binance_confirmation_jobs", filters={"id": f"eq.{confirmation_job_id}"}, limit=1
+    )
+    if not confirmation or confirmation[0].get("status") != "completed" or not bool(confirmation[0].get("passed")):
+        raise HTTPException(400, "A completed passing fresh-confirmation job is required")
+    try:
+        start_day = date.fromisoformat(window_start_date)
+        end_day = date.fromisoformat(window_end_date_exclusive)
+    except ValueError as exc:
+        raise HTTPException(400, "Backtest dates must use YYYY-MM-DD") from exc
+    if start_day >= end_day or end_day > date(2026, 5, 22):
+        raise HTTPException(400, "Use a non-empty untouched window ending no later than 2026-05-22")
+    quotes = [value.strip().upper() for value in quote_assets.split(",") if value.strip()]
+    db.insert(
+        "binance_backtest_jobs",
+        {
+            "id": str(uuid.uuid4()),
+            "confirmation_job_id": confirmation_job_id,
+            "status": "queued",
+            "protocol_version": "v6_continuous_executable_backtest_1",
+            "window_start_date": start_day.isoformat(),
+            "window_end_date_exclusive": end_day.isoformat(),
+            "quote_assets": quotes,
+            "position_quote_notional": 500,
+            "take_profit_pct": 15,
+            "stop_loss_pct": 5,
+            "max_hold_minutes": 180,
+            "fee_bps": 10,
+            "max_trades_per_day": 5,
+        },
+    )
+    return RedirectResponse("/", status_code=303)
+
+
 def _csv_response(rows: list[dict[str, Any]], filename: str) -> StreamingResponse:
     output = io.StringIO()
     if rows:
@@ -362,6 +449,24 @@ def download_baseline_context_file(request: Request, file_id: str) -> RedirectRe
     return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
 
 
+
+@app.get("/confirmation-files/{file_id}")
+def download_confirmation_file(request: Request, file_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_confirmation_files", filters={"id": f"eq.{file_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "Confirmation file not found")
+    return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
+
+
+@app.get("/backtest-files/{file_id}")
+def download_backtest_file(request: Request, file_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_backtest_files", filters={"id": f"eq.{file_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "Backtest file not found")
+    return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
+
 @app.get("/api/status")
 def api_status(request: Request) -> dict[str, Any]:
     _auth(request)
@@ -371,5 +476,7 @@ def api_status(request: Request) -> dict[str, Any]:
         "matched_control_jobs": db.select("binance_matched_control_jobs", order="created_at.desc", limit=20),
         "context_jobs": db.select("binance_context_jobs", order="created_at.desc", limit=20),
         "baseline_context_jobs": db.select("binance_baseline_context_jobs", order="created_at.desc", limit=20),
+        "confirmation_jobs": db.select("binance_confirmation_jobs", order="created_at.desc", limit=20),
+        "backtest_jobs": db.select("binance_backtest_jobs", order="created_at.desc", limit=20),
         "worker": db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1),
     }

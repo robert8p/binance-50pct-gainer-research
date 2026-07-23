@@ -56,3 +56,25 @@ Fresh staged:
 - `baseline_context_discovery.zip`
 - `baseline_context_validation.zip`
 - `baseline_context_sealed_test.zip`
+
+## V6 confirmation result
+
+`fresh_confirmation_results.zip` contains:
+
+- `fresh_confirmation_results.csv`: split and overall H1 rates;
+- `fresh_confirmation_population.csv`: the exact quality-pass offset-0 population used;
+- `source_manifest.csv`: source package hashes;
+- `confirmation_decision.json`: frozen checks and pass/fail decision.
+
+## V6 continuous backtest result
+
+`continuous_backtest_results.zip` contains:
+
+- `candidate_signals.csv`: all eligible two-stage signal timestamps before portfolio suppression;
+- `executed_trades.csv`: suppression, fill and completed-trade records;
+- `minute_data_coverage.csv`;
+- `aggregate_trade_coverage.csv`;
+- `backtest_protocol.json`;
+- `backtest_results.json`.
+
+A `completed` execution row records exact entry and exit VWAPs, fill timestamps, fees, gross return, net return and quote-currency P&L. Rows with `entry_not_filled`, `exit_not_filled`, cooldown or daily-cap statuses remain in the audit trail and are not silently discarded.

@@ -31,7 +31,7 @@ class BinanceClient:
     def __init__(self, base_urls: tuple[str, ...]):
         self.base_urls = base_urls
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": "binance-3h-50pct-research/3.0"})
+        self.session.headers.update({"User-Agent": "binance-3h-50pct-research/6.0"})
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> requests.Response:
         errors: list[str] = []
@@ -148,7 +148,7 @@ def archive_url(data_type: str, symbol: str, day: date, interval: str | None = N
 
 
 def download_archive(url: str, destination: Path) -> bool:
-    response = requests.get(url, timeout=180, stream=True, headers={"User-Agent": "binance-3h-50pct-research/3.0"})
+    response = requests.get(url, timeout=180, stream=True, headers={"User-Agent": "binance-3h-50pct-research/6.0"})
     if response.status_code == 404:
         return False
     response.raise_for_status()
@@ -163,7 +163,7 @@ def download_archive(url: str, destination: Path) -> bool:
     checksum = requests.get(
         f"{url}.CHECKSUM",
         timeout=60,
-        headers={"User-Agent": "binance-3h-50pct-research/3.0"},
+        headers={"User-Agent": "binance-3h-50pct-research/6.0"},
     )
     if checksum.status_code == 200:
         expected = checksum.text.strip().split()[0].lower()

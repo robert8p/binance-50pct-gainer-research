@@ -19,7 +19,7 @@
 </head>
 <body><main>
   <h1>Binance 3-Hour 50% Surge Research</h1>
-  <p class="muted">v5.0 aligns precursor research to the minute where the detected surge begins, while keeping the 15-minute continuation trigger separate.</p>
+  <p class="muted">v6.0 adds automatic fresh confirmation and a sealed continuous executable-entry backtest. Parameters are frozen before the historical results are opened.</p>
   <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative three-hour rolling window. The price only needs to touch the threshold.</p>
   <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not guarantee a fill at the threshold.</p>
 
@@ -105,6 +105,35 @@
       </form>
       <p class="muted small">For the existing 63-event job, choose exploratory. Fresh staged mode requires a new explicit historical scan ending on or before 22 May 2026 and matched controls built with the 180-minute horizon included.</p>
     </section>
+
+    <section class="card">
+      <h2>Step 6 — Confirm H1 on fresh history</h2>
+      <form method="post" action="/fresh-confirmation">
+        <label>Completed fresh staged baseline-context job</label><select name="baseline_context_job_id" required>
+          {% for job in completed_fresh_baseline_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — {{ job.events_total or 0 }} events — {{ job.id[:8] }}</option>{% endfor %}
+        </select>
+        <label>Frozen precursor</label><input value="Weak/flat prior week + ≥5% latest-day return + ≥1.5× volume" disabled>
+        <label>Acceptance criteria</label><input value="≥25% event rate; ≤15% control rate; matched p≤0.05; ≥5 symbols" disabled>
+        <button>Run automatic fresh confirmation</button>
+      </form>
+      <p class="muted small">The app opens discovery, validation and sealed packages automatically only after the rule and criteria are fixed in code. A failed result does not unlock Step 7.</p>
+    </section>
+
+    <section class="card">
+      <h2>Step 7 — Run sealed continuous backtest</h2>
+      <form method="post" action="/continuous-backtest">
+        <label>Passing fresh-confirmation job</label><select name="confirmation_job_id" required>
+          {% for job in passed_confirmation_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — PASS — {{ job.id[:8] }}</option>{% endfor %}
+        </select>
+        <label>Untouched backtest start (UTC)</label><input name="window_start_date" type="date" value="2026-03-01">
+        <label>Untouched backtest end (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2026-05-22">
+        <label>Canonical quote preference</label><input name="quote_assets" value="USDT,USDC,FDUSD">
+        <label>Frozen trade</label><input value="500 quote; +15% TP; −5% SL; 3h hold; 0.10% fee each side" disabled>
+        <label>Portfolio limit</label><input value="Maximum five filled entries per UTC day" disabled>
+        <button>Queue sealed continuous backtest</button>
+      </form>
+      <p class="muted small">This evaluates every completed one-minute bar and reconstructs fills from Binance aggregate trades. It can be lengthy. Do not change dates or parameters after seeing results.</p>
+    </section>
   </div>
 
   <section class="card"><h2>Worker</h2>
@@ -137,6 +166,35 @@
   </table></div></section>
 
 
+
+  <section class="card"><h2>Fresh-confirmation jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Status</th><th>Decision</th><th>Events</th><th>Controls</th><th>Rates</th><th>Matched p</th></tr></thead>
+    <tbody>{% for job in confirmation_jobs %}<tr>
+      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
+      <td>{% if job.status == "completed" %}{% if job.passed %}<span class="good">PASS</span>{% else %}FAIL{% endif %}{% else %}—{% endif %}</td>
+      <td>{{ job.event_hits or 0 }}/{{ job.events_evaluable or 0 }}</td><td>{{ job.control_hits or 0 }}/{{ job.controls_evaluable or 0 }}</td>
+      <td>{{ job.event_rate or "—" }} / {{ job.control_rate or "—" }}</td><td>{{ job.matched_permutation_p or "—" }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
+
+  <section class="card"><h2>Continuous backtest jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Status</th><th>Window</th><th>Symbols</th><th>Signals</th><th>Completed trades</th><th>Failures</th></tr></thead>
+    <tbody>{% for job in backtest_jobs %}<tr>
+      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
+      <td>{{ job.window_start_date }} to {{ job.window_end_date_exclusive }}</td><td>{{ job.symbols_processed or 0 }}/{{ job.symbols_total or 0 }}</td>
+      <td>{{ job.candidate_signals or 0 }}</td><td>{{ job.completed_trades or 0 }}</td><td>{{ job.failures or 0 }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
+
+  <section class="card"><h2>Fresh-confirmation and backtest downloads</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Role</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
+    <tbody>{% for file in confirmation_files %}<tr>
+      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td><td>{{ file.size_bytes }}</td><td><a href="/confirmation-files/{{ file.id }}">temporary link</a></td>
+    </tr>{% endfor %}
+    {% for file in backtest_files %}<tr>
+      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td><td>{{ file.size_bytes }}</td><td><a href="/backtest-files/{{ file.id }}">temporary link</a></td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
 
   <section class="card"><h2>Baseline-aligned context jobs</h2><div class="scroll"><table>
     <thead><tr><th>Created</th><th>Status</th><th>Mode</th><th>Samples</th><th>Baseline rows</th><th>Continuation rows</th><th>Failures</th></tr></thead>
