@@ -521,14 +521,26 @@ alter table binance_baseline_context_issues enable row level security;
 
 create table if not exists binance_confirmation_jobs (
   id uuid primary key default gen_random_uuid(),
-  baseline_context_job_id uuid not null references binance_baseline_context_jobs(id) on delete cascade,
+  baseline_context_job_id uuid references binance_baseline_context_jobs(id) on delete cascade,
+  scan_id uuid references binance_scan_jobs(id) on delete cascade,
   status text not null check (status in ('queued','running','completed','failed')),
-  protocol_version text not null default 'v7_h1_8h_fresh_confirmation_1',
+  protocol_version text not null default 'v8_h3_local_low_confirmation_1',
+  controls_per_event integer not null default 5 check (controls_per_event between 1 and 10),
+  prior_days integer not null default 10 check (prior_days = 10),
+  local_low_window_minutes integer not null default 480 check (local_low_window_minutes = 480),
+  min_entry_notional numeric not null default 500 check (min_entry_notional = 500),
+  discovery_pct integer not null default 70,
+  validation_pct integer not null default 15,
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
   heartbeat_at timestamptz,
   passed boolean,
+  events_total integer not null default 0,
+  symbols_total integer not null default 0,
+  symbols_processed integer not null default 0,
+  controls_created integer not null default 0,
+  failures integer not null default 0,
   events_evaluable integer not null default 0,
   controls_evaluable integer not null default 0,
   event_hits integer not null default 0,
@@ -537,8 +549,12 @@ create table if not exists binance_confirmation_jobs (
   control_rate numeric,
   matched_permutation_p numeric,
   unique_event_symbols_hit integer not null default 0,
+  cluster_rr_ci_low numeric,
+  cluster_rr_ci_high numeric,
+  duration_bands_positive integer not null default 0,
   result_json jsonb,
-  error_message text
+  error_message text,
+  check (baseline_context_job_id is not null or scan_id is not null)
 );
 
 create table if not exists binance_confirmation_files (
@@ -554,11 +570,20 @@ create table if not exists binance_confirmation_files (
   unique (confirmation_job_id, storage_path)
 );
 
+create table if not exists binance_confirmation_issues (
+  id bigint generated always as identity primary key,
+  confirmation_job_id uuid not null references binance_confirmation_jobs(id) on delete cascade,
+  symbol text,
+  stage text not null,
+  message text not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists binance_backtest_jobs (
   id uuid primary key default gen_random_uuid(),
   confirmation_job_id uuid not null references binance_confirmation_jobs(id) on delete restrict,
   status text not null check (status in ('queued','running','completed','completed_with_warnings','failed')),
-  protocol_version text not null default 'v7_continuous_executable_backtest_1',
+  protocol_version text not null default 'v8_h3_continuous_executable_backtest_1',
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
@@ -609,6 +634,8 @@ create index if not exists idx_binance_confirmation_jobs_status
   on binance_confirmation_jobs(status, created_at);
 create index if not exists idx_binance_confirmation_files_job
   on binance_confirmation_files(confirmation_job_id, created_at);
+create index if not exists idx_binance_confirmation_issues_job
+  on binance_confirmation_issues(confirmation_job_id, created_at);
 create index if not exists idx_binance_backtest_jobs_status
   on binance_backtest_jobs(status, created_at);
 create index if not exists idx_binance_backtest_files_job
@@ -618,6 +645,7 @@ create index if not exists idx_binance_backtest_issues_job
 
 alter table binance_confirmation_jobs enable row level security;
 alter table binance_confirmation_files enable row level security;
+alter table binance_confirmation_issues enable row level security;
 alter table binance_backtest_jobs enable row level security;
 alter table binance_backtest_files enable row level security;
 alter table binance_backtest_issues enable row level security;
@@ -651,6 +679,15 @@ alter table binance_baseline_context_jobs
   alter column snapshot_offsets_minutes set default '[14400,10080,7200,4320,2880,1440,720,480,360,180,60,0]'::jsonb;
 
 alter table binance_confirmation_jobs
-  alter column protocol_version set default 'v7_h1_8h_fresh_confirmation_1';
+  alter column protocol_version set default 'v8_h3_local_low_confirmation_1';
 alter table binance_backtest_jobs
-  alter column protocol_version set default 'v7_continuous_executable_backtest_1';
+  alter column protocol_version set default 'v8_h3_continuous_executable_backtest_1';
+
+
+-- Binance eight-hour 50% surge research v7 -> v8
+-- Fresh confirmation now uses scanner-equivalent local-low controls and H3.
+
+alter table binance_confirmation_jobs
+  alter column protocol_version set default 'v8_h3_local_low_confirmation_1';
+alter table binance_backtest_jobs
+  alter column protocol_version set default 'v8_h3_continuous_executable_backtest_1';

@@ -61,7 +61,7 @@ def main() -> None:
     matched_controls = MatchedControlBuilder(db, binance, settings.temp_data_dir)
     context_builder = TenDayContextBuilder(db, binance, settings.temp_data_dir)
     baseline_context_builder = BaselineContextBuilder(db, binance, settings.temp_data_dir)
-    confirmation_builder = FreshConfirmationBuilder(db, settings.temp_data_dir)
+    confirmation_builder = FreshConfirmationBuilder(db, binance, settings.temp_data_dir)
     backtest_builder = ContinuousBacktestBuilder(db, binance, settings.temp_data_dir)
     _recover_interrupted_jobs(db)
     logger.info("Worker started; interrupted jobs recovered")
@@ -225,6 +225,12 @@ def main() -> None:
                             "control_rate": result["control_rate"],
                             "matched_permutation_p": result["matched_permutation_p"],
                             "unique_event_symbols_hit": result["unique_event_symbols_hit"],
+                            "cluster_rr_ci_low": result.get("cluster_rr_ci_low"),
+                            "cluster_rr_ci_high": result.get("cluster_rr_ci_high"),
+                            "duration_bands_positive": result.get("duration_bands_positive", 0),
+                            "controls_created": result.get("controls_created", result.get("controls_evaluable", 0)),
+                            "symbols_processed": result.get("symbols_processed", 0),
+                            "failures": result.get("failures", 0),
                             "result_json": result,
                         },
                     )

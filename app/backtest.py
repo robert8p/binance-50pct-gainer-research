@@ -20,12 +20,11 @@ from .matched_controls import MinuteArchiveCache
 from .supabase import SupabaseClient
 
 BACKTEST_PROTOCOL: dict[str, Any] = {
-    "version": "v7_continuous_executable_backtest_1",
+    "version": "v8_h3_continuous_executable_backtest_1",
     "context_rule": {
-        "id": "H1_WEAK_BASE_IGNITION",
+        "id": "H3_VOLATILITY_REVERSAL",
+        "volatility_1d_to_7d_ratio_min": 0.4,
         "ret_prior_1d_to_7d_pct_max": 5.0,
-        "ret_1440m_pct_min": 5.0,
-        "volume_last1d_vs_prior2d_daily_rate_min": 1.5,
         "rising_edge_only": True,
     },
     "continuation_rule": {
@@ -52,9 +51,12 @@ BACKTEST_PROTOCOL: dict[str, Any] = {
         "parameters_tunable_after_run": False,
         "entry_time": "first aggregate trade after the completed continuation-signal minute",
         "fill_proxy": "buyer-initiated executions for entry; seller-initiated executions for exit",
+        "target_event_window_minutes": 480,
+        "maximum_trade_hold_minutes": 180,
         "current_universe_warning": "Uses coins tradeable at run time; historical delisted coins are absent.",
     },
 }
+
 
 AGG_COLUMNS = [
     "agg_trade_id", "price", "quantity", "first_trade_id", "last_trade_id",
@@ -189,27 +191,26 @@ def _rolling_runup(values: np.ndarray) -> float:
 
 
 def compute_signal_frame(frame: pd.DataFrame, start: datetime, end_exclusive: datetime) -> pd.DataFrame:
-    """Vectorised, look-ahead-safe implementation of the frozen two-stage signal."""
+    """Vectorised, look-ahead-safe implementation of the frozen V8 two-stage signal."""
     close = pd.to_numeric(frame["close"], errors="coerce")
     high = pd.to_numeric(frame["high"], errors="coerce")
     low = pd.to_numeric(frame["low"], errors="coerce")
     quote = pd.to_numeric(frame["quote_volume"], errors="coerce")
     observed = frame["observed"].fillna(False).astype(bool)
 
-    ret_1d = (close / close.shift(1440) - 1.0) * 100.0
+    # H3 uses exactly the same definitions as the baseline-context engine.
+    log_returns = np.log(close.where(close > 0)).diff()
+    rv_1d = log_returns.rolling(1439, min_periods=1152).std(ddof=1) * math.sqrt(1440) * 100.0
+    rv_7d = log_returns.rolling(10079, min_periods=8064).std(ddof=1) * math.sqrt(10080) * 100.0
+    volatility_ratio = rv_1d / rv_7d.replace(0, np.nan)
     prior_week = (close.shift(1440) / close.shift(10080) - 1.0) * 100.0
-    volume_1d = quote.rolling(1440, min_periods=1440).sum()
-    volume_3d = quote.rolling(4320, min_periods=4320).sum()
-    prior_2d_daily = (volume_3d - volume_1d) / 2.0
-    volume_ratio = volume_1d / prior_2d_daily.replace(0, np.nan)
     completeness_10d = observed.rolling(14400, min_periods=14400).mean()
-    h1 = (
-        (prior_week <= 5.0)
-        & (ret_1d >= 5.0)
-        & (volume_ratio >= 1.5)
+    h3 = (
+        (volatility_ratio >= 0.4)
+        & (prior_week <= 5.0)
         & (completeness_10d >= 0.995)
     ).fillna(False)
-    h1_rising = h1 & ~h1.shift(1, fill_value=False)
+    h3_rising = h3 & ~h3.shift(1, fill_value=False)
 
     ret_15 = (close / close.shift(15) - 1.0) * 100.0
     volume_15 = quote.rolling(15, min_periods=15).sum()
@@ -233,11 +234,12 @@ def compute_signal_frame(frame: pd.DataFrame, start: datetime, end_exclusive: da
     late = ((component_count >= 3) & (liquidity_5 >= 500.0) & observed).fillna(False)
 
     result = pd.DataFrame(index=frame.index)
-    result["h1"] = h1
-    result["h1_rising"] = h1_rising
+    result["h3"] = h3
+    result["h3_rising"] = h3_rising
     result["ret_prior_1d_to_7d_pct"] = prior_week
-    result["ret_1440m_pct"] = ret_1d
-    result["volume_last1d_vs_prior2d_daily_rate"] = volume_ratio
+    result["realized_vol_1440m_pct"] = rv_1d
+    result["realized_vol_10080m_pct"] = rv_7d
+    result["volatility_1d_to_7d_ratio"] = volatility_ratio
     result["late_trigger"] = late
     result["late_components_passed"] = component_count
     result["ret_15m_pct"] = ret_15
@@ -253,7 +255,7 @@ def compute_signal_frame(frame: pd.DataFrame, start: datetime, end_exclusive: da
 def candidate_signals(symbol: str, signal_frame: pd.DataFrame, arm_minutes: int = 480) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     next_arm_allowed: pd.Timestamp | None = None
-    rising_times = signal_frame.index[signal_frame["h1_rising"].fillna(False)]
+    rising_times = signal_frame.index[signal_frame["h3_rising"].fillna(False)]
     for arm_bar in rising_times:
         if next_arm_allowed is not None and arm_bar < next_arm_allowed:
             continue
@@ -266,15 +268,16 @@ def candidate_signals(symbol: str, signal_frame: pd.DataFrame, arm_minutes: int 
         row = late_rows.iloc[0]
         candidates.append({
             "symbol": symbol,
-            "h1_arm_bar_open": arm_bar.isoformat(),
+            "h3_arm_bar_open": arm_bar.isoformat(),
             "signal_bar_open": signal_bar.isoformat(),
             "signal_decision_time": (signal_bar + pd.Timedelta(minutes=1)).isoformat(),
             "arm_to_signal_minutes": int((signal_bar - arm_bar).total_seconds() // 60),
             "signal_close": float(row["signal_close"]),
             "late_components_passed": int(row["late_components_passed"]),
             "ret_prior_1d_to_7d_pct": float(row["ret_prior_1d_to_7d_pct"]),
-            "ret_1440m_pct": float(row["ret_1440m_pct"]),
-            "volume_last1d_vs_prior2d_daily_rate": float(row["volume_last1d_vs_prior2d_daily_rate"]),
+            "realized_vol_1440m_pct": float(row["realized_vol_1440m_pct"]),
+            "realized_vol_10080m_pct": float(row["realized_vol_10080m_pct"]),
+            "volatility_1d_to_7d_ratio": float(row["volatility_1d_to_7d_ratio"]),
             "ret_15m_pct": float(row["ret_15m_pct"]),
             "quote_volume_15m_vs_prior_7d_same_time": float(row["quote_volume_15m_vs_prior_7d_same_time"]),
             "position_in_1440m_range": float(row["position_in_1440m_range"]),
@@ -499,7 +502,7 @@ class ContinuousBacktestBuilder:
 
     def _validate_job(self, job: dict[str, Any]) -> tuple[date, date]:
         if str(job.get("protocol_version") or BACKTEST_PROTOCOL["version"]) != BACKTEST_PROTOCOL["version"]:
-            raise ValueError("Backtest protocol does not match the frozen V7 protocol")
+            raise ValueError("Backtest protocol does not match the frozen V8 protocol")
         confirmation_id = str(job["confirmation_job_id"])
         rows = self.db.select("binance_confirmation_jobs", filters={"id": f"eq.{confirmation_id}"}, limit=1)
         if not rows or rows[0].get("status") != "completed" or not bool(rows[0].get("passed")):
@@ -512,19 +515,13 @@ class ContinuousBacktestBuilder:
             raise ValueError("Sealed historical backtest must end on or before 2026-05-22")
         # Ensure the backtest does not overlap the fresh-confirmation source scan.
         confirmation = rows[0]
-        baseline_rows = self.db.select(
-            "binance_baseline_context_jobs",
-            filters={"id": f"eq.{confirmation['baseline_context_job_id']}"}, limit=1,
-        )
-        matched_rows = self.db.select(
-            "binance_matched_control_jobs",
-            filters={"id": f"eq.{baseline_rows[0]['matched_control_job_id']}"}, limit=1,
-        ) if baseline_rows else []
+        if confirmation.get("protocol_version") != "v8_h3_local_low_confirmation_1":
+            raise ValueError("V8 backtest requires a passing V8 H3 local-low confirmation")
         scan_rows = self.db.select(
-            "binance_scan_jobs", filters={"id": f"eq.{matched_rows[0]['scan_id']}"}, limit=1,
-        ) if matched_rows else []
+            "binance_scan_jobs", filters={"id": f"eq.{confirmation['scan_id']}"}, limit=1,
+        ) if confirmation.get("scan_id") else []
         if not scan_rows or scan_rows[0].get("event_definition_version") != "v7_rolling_8h" or int(scan_rows[0].get("window_minutes") or 0) != 480:
-            raise ValueError("V7 backtest requires a passing confirmation derived from the 480-minute event definition")
+            raise ValueError("V8 backtest requires a passing confirmation derived from the 480-minute event definition")
         if scan_rows[0].get("window_end_date_exclusive"):
             confirmation_end = date.fromisoformat(str(scan_rows[0]["window_end_date_exclusive"]))
             if start < confirmation_end:
@@ -702,7 +699,7 @@ class ContinuousBacktestBuilder:
                 "performance": performance,
                 "quality": quality,
                 "automatic_trading_decision": "research_output_only",
-                "pass_fail_not_preregistered": "V7 measures the fixed strategy; no profitability threshold is used to retune it.",
+                "pass_fail_not_preregistered": "V8 measures the fixed strategy; no profitability threshold is used to retune it.",
             }
 
             candidates_df.to_csv(work / "candidate_signals.csv", index=False)
@@ -713,7 +710,7 @@ class ContinuousBacktestBuilder:
             (work / "backtest_results.json").write_text(json.dumps(decision, indent=2, default=str), encoding="utf-8")
             (work / "README.md").write_text(
                 "# Continuous executable historical backtest\n\n"
-                "This package evaluates the frozen H1-plus-continuation sequence for the eight-hour target event after every completed one-minute bar. "
+                "This package evaluates the frozen H3-volatility-reversal-plus-continuation sequence for the eight-hour target event after every completed one-minute bar. "
                 "Entries and exits are reconstructed from historical aggregate trades. Treat the current-universe survivorship warning as material.\n",
                 encoding="utf-8",
             )

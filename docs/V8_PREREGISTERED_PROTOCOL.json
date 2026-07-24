@@ -1,0 +1,70 @@
+{
+  "version": "v8_h3_local_low_confirmation_1",
+  "created_before_fresh_evidence": true,
+  "target_event": {
+    "description": "saleable price increase of at least 50% from a prior one-minute low to a later high",
+    "rolling_window_minutes": 480,
+    "threshold_pct": 50,
+    "minimum_exit_notional_quote": 500,
+    "saleability_window_seconds": 300
+  },
+  "fresh_confirmation": {
+    "recommended_scan_window": {
+      "start_inclusive": "2025-11-01",
+      "end_exclusive": "2026-01-01"
+    },
+    "precursor": {
+      "id": "H3_VOLATILITY_REVERSAL",
+      "rule": [
+        "volatility_1d_to_7d_ratio >= 0.4",
+        "ret_prior_1d_to_7d_pct <= 5"
+      ]
+    },
+    "control_design": "same_scanner_rolling_minimum",
+    "control_definition": "At each matched pseudo-cross minute, select the latest occurrence of the minimum low in the prior 479 completed minutes, exactly matching the event scanner. Reject the control if that low rises 50% or more at any point in the following 480 minutes.",
+    "controls_per_event": 5,
+    "history_days": 10,
+    "minimum_prior_5m_quote_volume": 500,
+    "duration_bands": ["<=3h", "3-6h", "6-7h", "7-8h"],
+    "acceptance": {
+      "minimum_evaluable_events": 25,
+      "minimum_event_signal_rate": 0.3,
+      "maximum_control_signal_rate": 0.3,
+      "minimum_event_to_control_rate_ratio": 1.5,
+      "maximum_matched_permutation_p": 0.05,
+      "minimum_unique_event_symbols_hit": 8,
+      "symbol_cluster_rate_ratio_ci_low_must_exceed": 1.0,
+      "validation_and_sealed_must_have_positive_direction": true,
+      "minimum_positive_duration_bands_with_at_least_five_events": 2
+    },
+    "threshold_retuning_permitted": false
+  },
+  "continuous_backtest": {
+    "eligible_only_after_confirmation_pass": true,
+    "recommended_window": {
+      "start_inclusive": "2026-01-01",
+      "end_exclusive": "2026-05-22"
+    },
+    "arm_rule": "H3 rising edge",
+    "arm_window_minutes": 480,
+    "continuation_trigger": {
+      "minimum_components": 3,
+      "components": [
+        "15-minute return >= 0.9%",
+        "15-minute quote volume >= 12x prior seven-day same-time median",
+        "position within 24-hour range >= 0.74",
+        "15-minute maximum run-up >= 3.3%"
+      ],
+      "minimum_prior_5m_quote_volume": 500
+    },
+    "position_quote_notional": 500,
+    "take_profit_pct": 15,
+    "stop_loss_pct": 5,
+    "maximum_hold_minutes": 180,
+    "fee_bps_each_side": 10,
+    "maximum_filled_entries_per_utc_day": 5,
+    "symbol_cooldown_minutes": 180,
+    "entry_and_exit_fill_source": "Binance aggregate trades",
+    "parameters_tunable_after_run": false
+  }
+}

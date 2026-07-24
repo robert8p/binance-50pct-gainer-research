@@ -1,128 +1,88 @@
-# Binance 8-Hour 50% Surge Research App
+# Binance 8-hour 50% surge research — V8.0.0
 
-Historical research infrastructure for Binance Spot coins that rose at least **50% within eight hours** and were demonstrably saleable after the crossing.
+V8 corrects the main control-design weakness identified in the exploratory eight-hour analysis.
 
-The app does not connect to a Binance trading account or place orders.
+## Research objective
 
-## Version 7.0.0
+Find a repeatable, historically robust way to identify saleable Binance Spot coins before or during the early stages of a rise of at least 50% within eight hours.
 
-V7 changes the target event from a 50% rise within three hours to a 50% rise within **eight hours**.
+A qualifying event must also prove at least 500 quote units of seller-initiated executed notional within five minutes after the exact crossing trade.
 
-That change applies throughout the research chain:
+## What V8 changes
 
-- discovery scanning;
-- exact crossing verification;
-- saleability testing;
-- matched-control contamination checks;
-- baseline alignment;
-- ten-day context features;
-- fresh historical confirmation;
-- the precursor-to-continuation arm window.
+The event scanner itself is unchanged: it uses the latest occurrence of the lowest one-minute low in the prior 479 completed minutes and identifies a later high at least 50% above that low.
 
-Prior three-hour scans and research packages remain in Supabase as historical records, but V7 deliberately excludes them from its workflow selectors. An eight-hour event definition requires a fresh scan and fresh downstream research.
+V8 fresh confirmation now selects non-event controls using the **same algorithm**:
 
-## What remains unchanged
+1. Choose a matched pseudo-cross minute for the same coin and chronological split.
+2. Select the latest occurrence of the minimum low in the preceding 479 completed minutes.
+3. Require the selected baseline to fall in the same event-duration band.
+4. Reject the control if that low rises 50% or more during the following eight-hour window.
+5. Require ten complete days of history and at least 500 quote units of five-minute pre-baseline liquidity.
 
-- Latest-scan horizon: **60 completed UTC days** by default.
-- Threshold: **50%**.
-- Saleability: at least **500 quote units** of seller-initiated executed notional within five minutes after the exact crossing.
-- H1 precursor thresholds.
-- Late-momentum trigger thresholds.
-- Executable trade specification, including the separate **three-hour maximum hold**.
+This removes the earlier asymmetry where event baselines were retrospectively selected lows but control baselines were ordinary timestamps.
 
-The target event may unfold over eight hours; that does not automatically make an eight-hour hold optimal. The previously frozen three-hour trade hold remains separate so the research question changes only where intended.
+## Frozen precursor
 
-## Fresh V7 evidence sequence
+V8 tests only the unchanged H3 volatility-reversal rule:
 
-Because the January–February 2026 period was already opened under the three-hour definition, the recommended untouched V7 confirmation period is:
+- `volatility_1d_to_7d_ratio >= 0.4`
+- `ret_prior_1d_to_7d_pct <= 5`
 
-- Fresh confirmation: **1 November 2025–1 January 2026**, end exclusive.
-- Sealed continuous backtest, only after confirmation passes: **1 March–22 May 2026**, end exclusive.
+No threshold can be edited from the dashboard.
 
-These windows are fixed in `docs/V7_PREREGISTERED_PROTOCOL.json` before V7 results are opened.
+## Fresh confirmation period
 
-## Frozen precursor: H1 weak-base ignition
+Use an explicit eight-hour historical scan covering:
 
-At every candidate baseline, H1 requires:
+- Start inclusive: `2025-11-01`
+- End exclusive: `2026-01-01`
 
-- return during the earlier one-to-seven-day period no higher than **+5%**;
-- latest 24-hour return at least **+5%**;
-- latest one-day quote volume at least **1.5×** the daily rate of the preceding two days.
+This period predates the opened May–July eight-hour exploratory sample.
 
-Fresh confirmation uses only:
+## Preregistered acceptance
 
-- offset-0 baseline rows;
-- quality-pass data;
-- at least 500 quote units of prior five-minute liquidity;
-- uncontaminated same-coin controls.
+H3 passes only if all checks succeed:
 
-The app opens all staged packages only after the rule and acceptance criteria are frozen in code. No dashboard field can retune the thresholds.
+- at least 25 evaluable events;
+- event signal rate at least 30%;
+- control signal rate no higher than 30%;
+- event/control rate ratio at least 1.5;
+- matched randomisation p-value no higher than 0.05;
+- at least eight distinct event symbols hit;
+- symbol-cluster bootstrap rate-ratio lower bound above 1;
+- positive direction in both validation and sealed chronological segments;
+- positive direction in at least two duration bands containing at least five events.
 
-## Frozen confirmation criteria
+A failed result keeps the continuous backtest locked.
 
-H1 must achieve all of the following:
+## Continuous backtest after a pass
 
-- at least 15 evaluable surge events;
-- event signal rate at least 25%;
-- control signal rate no more than 15%;
-- event/control rate ratio at least 2.0;
-- matched permutation p-value no more than 0.05;
-- at least five event symbols detected;
-- event rate above control rate in the sealed split.
+The frozen sequence is:
 
-A failed confirmation does not unlock the continuous backtest.
-
-## Continuous two-stage backtest
-
-After every completed one-minute bar:
-
-1. H1 becomes true on a rising edge and arms the coin for eight hours.
+1. H3 becomes true on a rising edge and arms the coin for eight hours.
 2. The unchanged late-momentum trigger must occur during that arm window.
-3. Entry begins only after the completed trigger minute.
-4. Historical buyer-initiated aggregate trades must prove a 500-quote-unit entry within 60 seconds.
-5. Exit uses historical seller-initiated aggregate trades.
+3. Enter using buyer-initiated aggregate trades after the completed trigger minute.
+4. Prove a 500-quote-unit fill.
+5. Exit at +15%, −5%, or after three hours, using seller-initiated aggregate trades.
+6. Apply 0.10% fees on each side, a three-hour symbol cooldown and a maximum of five filled entries per UTC day.
 
-The fixed trade specification is:
+The eight-hour target window and three-hour maximum trade hold are deliberately separate.
 
-- position: 500 quote units;
-- take profit: +15%;
-- stop loss: −5%;
-- maximum hold: three hours;
-- exit-fill window: five minutes;
-- fees: 0.10% on entry and exit;
-- maximum five filled entries per UTC day;
-- 180-minute symbol cooldown after exit or failed execution.
+## Deployment
 
-The output includes signal frequency, completed trades, fill failures, expectancy, profit factor, drawdown, consecutive losses, symbol concentration, fees and slippage.
-
-## Official data
-
-The application uses Binance public Spot market-data endpoints and Binance's official daily archive for one-minute klines and aggregate trades. Archive checksums are verified when Binance publishes them.
-
-No Binance API key is required.
-
-## Upgrade from V6
-
-Run:
+Existing installations should run:
 
 ```text
-supabase/migrate_v6_to_v7.sql
+supabase/migrate_v7_to_v8.sql
 ```
 
-Then replace the GitHub repository files with the extracted V7 package and wait for both Render services to redeploy.
+Then upload the V8 files to the existing GitHub repository and wait for both Render services to redeploy.
 
-The health route should show:
+Health check:
 
 ```json
-{"status":"ok","version":"7.0.0"}
+{"status":"ok","version":"8.0.0"}
 ```
 
-Follow `WINDOWS_UPDATE.md` for the simplest deployment route.
-
-## Material limitations
-
-- The historical universe begins with coins tradeable on Binance when the job runs. Delisted historical coins are absent, creating survivorship bias.
-- Aggregate executed trades are a defensible fill proxy, not a reconstruction of historical order-book depth.
-- Current Binance availability does not guarantee availability to a particular UK account or entity.
-- Backtest results do not guarantee future performance.
-- One fixed exit specification is tested. It must not be changed after seeing the result and then described as sealed evidence.
+See `WINDOWS_UPDATE.md` for the simplest upgrade and run sequence.

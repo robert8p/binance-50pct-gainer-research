@@ -1,17 +1,17 @@
-# Android/Termux upgrade from V6 to V7
+# Android update — V8
 
-Run `supabase/migrate_v6_to_v7.sql` in Supabase first.
-
-Download the V7 ZIP into Android's Downloads folder, then run:
+Download the V8 ZIP into Android Downloads, then in Termux:
 
 ```bash
 cd ~/binance-50pct-app
-unzip -o ~/storage/downloads/binance_8h_50pct_fresh_confirmation_backtest_v7_0_0.zip
+unzip -o ~/storage/downloads/binance_8h_50pct_local_low_confirmation_v8_0_0.zip
 git add .
-git commit -m "Upgrade to v7 eight-hour surge research"
+git commit -m "Upgrade to v8 local-low confirmation"
 git push
 ```
 
-Wait for both Render services to redeploy and confirm `/health` reports version `7.0.0`.
+Before pushing, run `supabase/migrate_v7_to_v8.sql` in the Supabase SQL Editor.
 
-Prior three-hour scans are retained as history but cannot be selected for V7 downstream jobs. Queue a new eight-hour scan and follow the exact sequence in `WINDOWS_UPDATE.md`; the dashboard steps are the same on Android.
+Wait for both Render services to redeploy and confirm `/health` reports `8.0.0`.
+
+For the fresh scan use `2025-11-01` to `2026-01-01`, then run Step 6 directly. Steps 2–5 are not required for V8 confirmation.

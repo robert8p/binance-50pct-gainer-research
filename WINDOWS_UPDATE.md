@@ -1,134 +1,110 @@
-# Simple Windows upgrade to V7
+# Simple Windows upgrade and run guide — V8
 
-## 1. Extract the package
+## A. Upgrade the existing app
 
-1. Download and extract `binance_8h_50pct_fresh_confirmation_backtest_v7_0_0.zip`.
-2. Open the extracted folder and confirm that `app`, `supabase`, `tests`, `render.yaml` and `requirements.txt` are directly inside it.
+### 1. Download and extract
 
-## 2. Update Supabase
+Download and extract:
 
-1. Open `supabase\migrate_v6_to_v7.sql` in Notepad.
-2. Press `Ctrl+A`, then `Ctrl+C`.
-3. Open **Supabase → SQL Editor → New query**.
-4. Paste and select **Run**.
+```text
+binance_8h_50pct_local_low_confirmation_v8_0_0.zip
+```
 
-The migration is additive. It keeps all prior scans and research packages, while changing V7 defaults to the eight-hour event definition.
+### 2. Update Supabase
 
-## 3. Update GitHub
+1. Open the extracted folder.
+2. Open `supabase\migrate_v7_to_v8.sql` in Notepad.
+3. Press `Ctrl+A`, then `Ctrl+C`.
+4. Open your existing Supabase project.
+5. Open **SQL Editor → New query**.
+6. Paste the SQL and select **Run**.
 
-1. Open the existing GitHub repository.
+The migration preserves all existing scans and research packages.
+
+### 3. Replace the GitHub files
+
+1. Open the existing private GitHub repository.
 2. Select **Add file → Upload files**.
-3. Drag everything from inside the extracted V7 folder onto the upload page.
-4. Confirm replacement when GitHub shows existing files.
+3. Drag everything from inside the extracted V8 folder onto the page.
+4. Confirm the top level still contains `app`, `supabase`, `tests`, `render.yaml` and `requirements.txt`.
 5. Commit with:
 
 ```text
-Upgrade to v7 eight-hour surge research
+Upgrade to v8 local-low confirmation
 ```
 
-## 4. Check Render
+### 4. Confirm Render
 
-Wait for both services to redeploy:
-
-```text
-binance-50pct-scanner-web
-binance-50pct-scanner-worker
-```
-
-Open:
+Wait until both services are **Live**, then open:
 
 ```text
-https://YOUR-RENDER-APP.onrender.com/health
+https://YOUR-APP.onrender.com/health
 ```
 
 Expected result:
 
 ```json
-{"status":"ok","version":"7.0.0"}
+{"status":"ok","version":"8.0.0"}
 ```
 
-## 5. Run a new eight-hour discovery scan
+## B. Run the untouched V8 confirmation
 
-Do not reuse a three-hour scan. V7 deliberately excludes old three-hour jobs from the downstream dropdowns.
+### 5. Queue the fresh eight-hour scan
 
-For a current scan, leave the historical dates blank and use:
+In Step 1 use:
 
 ```text
-Lookback: 60 completed UTC days
-Threshold: 50
-Rolling window: 8 hours
-Minimum exit notional: 500
-Saleability window: 300 seconds
+Historical start:       2025-11-01
+Historical end:         2026-01-01
+Threshold:              50
+Rolling window:         8 hours
+Minimum exit notional:  500
+Saleability window:     300 seconds
 ```
 
-For fresh historical confirmation, use this untouched V7 window instead:
+Queue the scan and wait for `completed` or `completed_with_warnings`.
+
+You do not need to run Steps 2–5 for this confirmation round.
+
+### 6. Run Step 6
+
+In **Step 6 — Confirm H3 with algorithmic local-low controls**:
+
+1. Select the completed `2025-11-01` to `2026-01-01` scan.
+2. Leave controls per event at `5`.
+3. Leave history at `10` days.
+4. Leave liquidity at `500`.
+5. Select **Run corrected fresh confirmation**.
+
+The worker will:
+
+- calculate H3 at each genuine event baseline;
+- build controls using the same rolling-minimum baseline algorithm;
+- reject contaminated controls;
+- test discovery, validation and sealed chronological segments;
+- report results by event-duration band.
+
+Refresh the dashboard periodically. Do not queue the job twice.
+
+### 7. Share the result
+
+When complete, download:
 
 ```text
-Historical start: 2025-11-01
-Historical end, exclusive: 2026-01-01
-Threshold: 50
-Rolling window: 8 hours
-Minimum exit notional: 500
-Saleability window: 300 seconds
+fresh_confirmation_results.zip
 ```
 
-## 6. Build matched controls
+Upload that ZIP for analysis.
 
-After the chosen V7 scan completes, queue matched controls with:
+### 8. Step 7 only after PASS
+
+If Step 6 says **FAIL**, stop. Do not alter the 0.4 or +5% thresholds and rerun while calling it confirmation.
+
+If Step 6 says **PASS**, Step 7 becomes available. Use:
 
 ```text
-Controls per event: 5
-Predictor-history days: 10
-Decision horizons: 15,30,60,120,180,480
-Minimum prior five-minute quote volume: 500
+Backtest start:          2026-01-01
+Backtest end exclusive:  2026-05-22
 ```
 
-The `480` horizon is mandatory for eight-hour contamination protection.
-
-## 7. Build baseline-aligned context
-
-After matched controls complete:
-
-```text
-Research treatment: Earlier untouched data — discovery/validation/sealed
-Minimum prior five-minute quote volume: 500
-```
-
-Use this mode only for the 1 November 2025–1 January 2026 fresh scan. Use exploratory mode for any already-opened period.
-
-## 8. Run automatic confirmation
-
-Select the completed fresh staged baseline-context job and choose:
-
-```text
-Run automatic fresh confirmation
-```
-
-Do not manually download or inspect its discovery, validation or sealed files first.
-
-Interpret the result as follows:
-
-- **PASS:** Step 7 becomes available.
-- **FAIL:** Stop. Do not alter H1 thresholds and rerun while describing it as confirmation.
-
-Download `fresh_confirmation_results.zip` and upload it to ChatGPT.
-
-## 9. Run the sealed continuous backtest only after PASS
-
-Use:
-
-```text
-Start: 2026-03-01
-End, exclusive: 2026-05-22
-Quote preference: USDT,USDC,FDUSD
-```
-
-The eight-hour target and arm window are fixed automatically. The trade itself retains its separately frozen three-hour maximum hold.
-
-The job can take many hours because it evaluates every completed minute across the current Binance Spot universe and downloads official aggregate-trade archives for candidate signals.
-
-After completion, download and upload:
-
-```text
-continuous_backtest_results.zip
-```
+The frozen trade remains 500 quote units, +15% take profit, −5% stop loss, three-hour maximum hold, 0.10% fee each side and no more than five filled entries per UTC day.

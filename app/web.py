@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 8-Hour 50% Surge Research", version="7.0.0")
+app = FastAPI(title="Binance 8-Hour 50% Surge Research", version="8.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "7.0.0"}
+    return {"status": "ok", "version": "8.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -74,12 +74,23 @@ def dashboard(request: Request) -> HTMLResponse:
         and str(x.get("matched_control_job_id")) in v7_matched_ids
     ]
     v7_baseline_ids = {str(x["id"]) for x in completed_fresh_baseline_jobs}
+    fresh_confirmation_scans = []
+    for scan in completed_scans:
+        end_value = scan.get("window_end_date_exclusive") or (scan.get("result_json") or {}).get("window_end_exclusive")
+        if not end_value:
+            continue
+        try:
+            end_day = date.fromisoformat(str(end_value)[:10])
+        except ValueError:
+            continue
+        if end_day <= date(2026, 1, 1):
+            fresh_confirmation_scans.append(scan)
     passed_confirmation_jobs = [
         x for x in confirmation_jobs
         if x.get("status") == "completed"
         and bool(x.get("passed"))
-        and x.get("protocol_version") == "v7_h1_8h_fresh_confirmation_1"
-        and str(x.get("baseline_context_job_id")) in v7_baseline_ids
+        and x.get("protocol_version") == "v8_h3_local_low_confirmation_1"
+        and x.get("scan_id")
     ]
     return templates.TemplateResponse(
         request,
@@ -93,6 +104,7 @@ def dashboard(request: Request) -> HTMLResponse:
             "confirmation_jobs": confirmation_jobs,
             "backtest_jobs": backtest_jobs,
             "completed_fresh_baseline_jobs": completed_fresh_baseline_jobs,
+            "fresh_confirmation_scans": fresh_confirmation_scans,
             "passed_confirmation_jobs": passed_confirmation_jobs,
             "completed_matched_jobs": completed_matched_jobs,
             "completed_scans": completed_scans,
@@ -299,37 +311,47 @@ def create_baseline_context(
 @app.post("/fresh-confirmation")
 def create_fresh_confirmation(
     request: Request,
-    baseline_context_job_id: str = Form(...),
+    scan_id: str = Form(...),
+    controls_per_event: int = Form(5),
+    prior_days: int = Form(10),
+    min_entry_notional: float = Form(500),
 ) -> RedirectResponse:
     _auth(request)
-    rows = db.select(
-        "binance_baseline_context_jobs",
-        filters={"id": f"eq.{baseline_context_job_id}"},
-        limit=1,
-    )
+    if not 1 <= controls_per_event <= 10:
+        raise HTTPException(400, "controls_per_event must be between 1 and 10")
+    if prior_days != 10:
+        raise HTTPException(400, "V8 confirmation history is frozen at 10 days")
+    if abs(min_entry_notional - 500.0) > 1e-12:
+        raise HTTPException(400, "V8 confirmation liquidity floor is frozen at 500 quote units")
+    rows = db.select("binance_scan_jobs", filters={"id": f"eq.{scan_id}"}, limit=1)
     if not rows or rows[0].get("status") not in {"completed", "completed_with_warnings"}:
-        raise HTTPException(400, "Select a completed baseline-context job")
-    if rows[0].get("research_mode") != "fresh_staged":
-        raise HTTPException(400, "Fresh confirmation requires a fresh_staged baseline-context job")
-    matched_rows = db.select(
-        "binance_matched_control_jobs",
-        filters={"id": f"eq.{rows[0]['matched_control_job_id']}"},
-        limit=1,
-    )
-    scan_rows = db.select(
-        "binance_scan_jobs",
-        filters={"id": f"eq.{matched_rows[0]['scan_id']}"},
-        limit=1,
-    ) if matched_rows else []
-    if not scan_rows or scan_rows[0].get("event_definition_version") != "v7_rolling_8h" or int(scan_rows[0].get("window_minutes") or 0) != 480:
-        raise HTTPException(400, "Fresh confirmation requires V7 eight-hour baseline context")
+        raise HTTPException(400, "Select a completed historical eight-hour scan")
+    scan = rows[0]
+    if scan.get("event_definition_version") != "v7_rolling_8h" or int(scan.get("window_minutes") or 0) != 480:
+        raise HTTPException(400, "V8 confirmation requires the eight-hour event definition")
+    end_value = scan.get("window_end_date_exclusive") or (scan.get("result_json") or {}).get("window_end_exclusive")
+    if not end_value:
+        raise HTTPException(400, "Use an explicit historical scan window")
+    try:
+        end_day = date.fromisoformat(str(end_value)[:10])
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid source scan end date") from exc
+    if end_day > date(2026, 1, 1):
+        raise HTTPException(400, "Fresh V8 confirmation must use a scan ending no later than 2026-01-01")
     db.insert(
         "binance_confirmation_jobs",
         {
             "id": str(uuid.uuid4()),
-            "baseline_context_job_id": baseline_context_job_id,
+            "baseline_context_job_id": None,
+            "scan_id": scan_id,
             "status": "queued",
-            "protocol_version": "v7_h1_8h_fresh_confirmation_1",
+            "protocol_version": "v8_h3_local_low_confirmation_1",
+            "controls_per_event": controls_per_event,
+            "prior_days": prior_days,
+            "local_low_window_minutes": 480,
+            "min_entry_notional": min_entry_notional,
+            "discovery_pct": 70,
+            "validation_pct": 15,
         },
     )
     return RedirectResponse("/", status_code=303)
@@ -339,7 +361,7 @@ def create_fresh_confirmation(
 def create_continuous_backtest(
     request: Request,
     confirmation_job_id: str = Form(...),
-    window_start_date: str = Form("2026-03-01"),
+    window_start_date: str = Form("2026-01-01"),
     window_end_date_exclusive: str = Form("2026-05-22"),
     quote_assets: str = Form("USDT,USDC,FDUSD"),
 ) -> RedirectResponse:
@@ -349,8 +371,8 @@ def create_continuous_backtest(
     )
     if not confirmation or confirmation[0].get("status") != "completed" or not bool(confirmation[0].get("passed")):
         raise HTTPException(400, "A completed passing fresh-confirmation job is required")
-    if confirmation[0].get("protocol_version") != "v7_h1_8h_fresh_confirmation_1":
-        raise HTTPException(400, "Select a passing V7 eight-hour confirmation job")
+    if confirmation[0].get("protocol_version") != "v8_h3_local_low_confirmation_1":
+        raise HTTPException(400, "Select a passing V8 H3 local-low confirmation job")
     try:
         start_day = date.fromisoformat(window_start_date)
         end_day = date.fromisoformat(window_end_date_exclusive)
@@ -365,7 +387,7 @@ def create_continuous_backtest(
             "id": str(uuid.uuid4()),
             "confirmation_job_id": confirmation_job_id,
             "status": "queued",
-            "protocol_version": "v7_continuous_executable_backtest_1",
+            "protocol_version": "v8_h3_continuous_executable_backtest_1",
             "window_start_date": start_day.isoformat(),
             "window_end_date_exclusive": end_day.isoformat(),
             "quote_assets": quotes,

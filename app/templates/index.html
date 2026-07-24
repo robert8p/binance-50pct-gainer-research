@@ -19,7 +19,7 @@
 </head>
 <body><main>
   <h1>Binance 8-Hour 50% Surge Research</h1>
-  <p class="muted">v7.0 broadens the target event to a 50% rise within eight hours while preserving saleability checks, staged confirmation, and the sealed executable-entry backtest.</p>
+  <p class="muted">v8.0 tests the frozen volatility-reversal precursor using non-event baselines selected by the same eight-hour rolling-minimum algorithm as genuine surge events.</p>
   <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative eight-hour rolling window. The price only needs to touch the threshold.</p>
   <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not guarantee a fill at the threshold.</p>
 
@@ -107,16 +107,19 @@
     </section>
 
     <section class="card">
-      <h2>Step 6 — Confirm H1 on fresh history</h2>
+      <h2>Step 6 — Confirm H3 with algorithmic local-low controls</h2>
       <form method="post" action="/fresh-confirmation">
-        <label>Completed fresh staged baseline-context job</label><select name="baseline_context_job_id" required>
-          {% for job in completed_fresh_baseline_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — {{ job.events_total or 0 }} events — {{ job.id[:8] }}</option>{% endfor %}
+        <label>Completed untouched eight-hour scan ending by 1 Jan 2026</label><select name="scan_id" required>
+          {% for scan in fresh_confirmation_scans %}<option value="{{ scan.id }}">{{ scan.created_at }} — {{ scan.events_found or 0 }} events — {{ scan.window_start_date }} to {{ scan.window_end_date_exclusive }} — {{ scan.id[:8] }}</option>{% endfor %}
         </select>
-        <label>Frozen precursor</label><input value="Weak/flat prior week + ≥5% latest-day return + ≥1.5× volume" disabled>
-        <label>Acceptance criteria</label><input value="≥25% event rate; ≤15% control rate; matched p≤0.05; ≥5 symbols" disabled>
-        <button>Run automatic fresh confirmation</button>
+        <label>Algorithmic local-low controls per event</label><input name="controls_per_event" type="number" value="5" min="1" max="10">
+        <label>Frozen predictor history</label><input name="prior_days" type="number" value="10" readonly>
+        <label>Frozen liquidity floor</label><input name="min_entry_notional" type="number" value="500" readonly>
+        <label>Frozen precursor</label><input value="1-day/7-day volatility ratio ≥0.4 + prior week return ≤+5%" disabled>
+        <label>Core acceptance</label><input value="≥30% events; ≤30% controls; ≥1.5× ratio; matched p≤0.05; cluster CI &gt;1" disabled>
+        <button>Run corrected fresh confirmation</button>
       </form>
-      <p class="muted small">The app opens discovery, validation and sealed packages automatically only after the rule and criteria are fixed in code. A failed result does not unlock Step 7.</p>
+      <p class="muted small">Controls use the scanner’s identical baseline rule: the latest minimum low in the prior 479 minutes. Any control that subsequently rises 50% within eight hours is rejected. Results are also split by event duration band.</p>
     </section>
 
     <section class="card">
@@ -125,14 +128,14 @@
         <label>Passing fresh-confirmation job</label><select name="confirmation_job_id" required>
           {% for job in passed_confirmation_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — PASS — {{ job.id[:8] }}</option>{% endfor %}
         </select>
-        <label>Untouched backtest start (UTC)</label><input name="window_start_date" type="date" value="2026-03-01">
+        <label>Untouched backtest start (UTC)</label><input name="window_start_date" type="date" value="2026-01-01">
         <label>Untouched backtest end (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2026-05-22">
         <label>Canonical quote preference</label><input name="quote_assets" value="USDT,USDC,FDUSD">
         <label>Frozen trade</label><input value="500 quote; +15% TP; −5% SL; 3h hold; 0.10% fee each side" disabled>
         <label>Portfolio limit</label><input value="Maximum five filled entries per UTC day" disabled>
         <button>Queue sealed continuous backtest</button>
       </form>
-      <p class="muted small">This evaluates every completed one-minute bar and reconstructs fills from Binance aggregate trades. It can be lengthy. Do not change dates or parameters after seeing results.</p>
+      <p class="muted small">This evaluates H3 after every completed one-minute bar, arms the coin for eight hours, and then requires the unchanged late-momentum confirmation. Fills are reconstructed from Binance aggregate trades. Do not change dates or parameters after seeing results.</p>
     </section>
   </div>
 
@@ -168,12 +171,12 @@
 
 
   <section class="card"><h2>Fresh-confirmation jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Decision</th><th>Events</th><th>Controls</th><th>Rates</th><th>Matched p</th></tr></thead>
+    <thead><tr><th>Created</th><th>Status</th><th>Decision</th><th>Events</th><th>Controls</th><th>Rates</th><th>Matched p</th><th>Cluster RR CI</th><th>Duration bands</th></tr></thead>
     <tbody>{% for job in confirmation_jobs %}<tr>
       <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
       <td>{% if job.status == "completed" %}{% if job.passed %}<span class="good">PASS</span>{% else %}FAIL{% endif %}{% else %}—{% endif %}</td>
       <td>{{ job.event_hits or 0 }}/{{ job.events_evaluable or 0 }}</td><td>{{ job.control_hits or 0 }}/{{ job.controls_evaluable or 0 }}</td>
-      <td>{{ job.event_rate or "—" }} / {{ job.control_rate or "—" }}</td><td>{{ job.matched_permutation_p or "—" }}</td>
+      <td>{{ job.event_rate or "—" }} / {{ job.control_rate or "—" }}</td><td>{{ job.matched_permutation_p or "—" }}</td><td>{{ job.cluster_rr_ci_low or "—" }}–{{ job.cluster_rr_ci_high or "—" }}</td><td>{{ job.duration_bands_positive or 0 }}</td>
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
@@ -204,7 +207,7 @@
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
-  <section class="card"><h2>Baseline-aligned downloads</h2><p class="warning">Any previously opened package is exploratory. For fresh V7 staged evidence, do not open validation or sealed-test files before Step 6.</p><div class="scroll"><table>
+  <section class="card"><h2>Baseline-aligned downloads</h2><p class="warning">Any previously opened package is exploratory. Legacy baseline packages remain available for audit; V8 Step 6 no longer depends on them because it corrects baseline selection directly.</p><div class="scroll"><table>
     <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
     <tbody>{% for file in baseline_context_files %}<tr>
       <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index/exploratory" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>
