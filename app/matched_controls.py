@@ -45,7 +45,7 @@ NUMERIC_COLUMNS = [
     "taker_buy_base_volume",
     "taker_buy_quote_volume",
 ]
-FEATURE_WINDOWS = (1, 5, 15, 30, 60, 120, 180, 360, 720, 1440)
+FEATURE_WINDOWS = (1, 5, 15, 30, 60, 120, 180, 360, 480, 720, 1440)
 REFERENCE_SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT")
 SPLITS = ("discovery", "validation", "sealed_test")
 
@@ -331,9 +331,9 @@ def _reference_features(frame: pd.DataFrame, decision_time: datetime, prefix: st
     end_open = pd.Timestamp(floor_minute(decision_time) - timedelta(minutes=1))
     result: dict[str, Any] = {}
     if end_open not in frame.index or pd.isna(frame.at[end_open, "close"]):
-        return {f"{prefix}_ret_{window}m_pct": None for window in (15, 60, 180)} | {f"{prefix}_rv_60m_pct": None}
+        return {f"{prefix}_ret_{window}m_pct": None for window in (15, 60, 180, 480)} | {f"{prefix}_rv_60m_pct": None}
     end_close = float(frame.at[end_open, "close"])
-    for window in (15, 60, 180):
+    for window in (15, 60, 180, 480):
         lag = end_open - pd.Timedelta(minutes=window)
         old = float(frame.at[lag, "close"]) if lag in frame.index and pd.notna(frame.at[lag, "close"]) else None
         result[f"{prefix}_ret_{window}m_pct"] = safe_pct(end_close, old)
@@ -507,12 +507,14 @@ def compute_feature_row(
     row["ret_60m_minus_btc_pct_points"] = float(row["ret_60m_pct"]) - float(btc_return) if row.get("ret_60m_pct") is not None and btc_return is not None else None
     btc_return_180 = row.get("btc_ret_180m_pct")
     row["ret_180m_minus_btc_pct_points"] = float(row["ret_180m_pct"]) - float(btc_return_180) if row.get("ret_180m_pct") is not None and btc_return_180 is not None else None
+    btc_return_480 = row.get("btc_ret_480m_pct")
+    row["ret_480m_minus_btc_pct_points"] = float(row["ret_480m_pct"]) - float(btc_return_480) if row.get("ret_480m_pct") is not None and btc_return_480 is not None else None
 
     outcome_start = pd.Timestamp(floor_minute(decision_time))
     anchor_open = pd.Timestamp(floor_minute(anchor))
     to_anchor = frame.loc[outcome_start:anchor_open]
-    next_3h = frame.loc[outcome_start : outcome_start + pd.Timedelta(minutes=179)]
-    for prefix, segment in (("to_anchor", to_anchor), ("next_3h", next_3h)):
+    next_8h = frame.loc[outcome_start : outcome_start + pd.Timedelta(minutes=479)]
+    for prefix, segment in (("to_anchor", to_anchor), ("next_8h", next_8h)):
         high = segment["high"].max(skipna=True)
         low = segment["low"].min(skipna=True)
         row[f"outcome_{prefix}_max_gain_pct"] = safe_pct(float(high), entry_price) if pd.notna(high) else None
@@ -693,7 +695,7 @@ def select_controls_for_event(
     for rank, candidate in enumerate(selected, start=1):
         prior_reuse = used_counts[candidate["key"]]
         used_counts[candidate["key"]] += 1
-        control_id = deterministic_uuid("matched-control-v3", event["id"], candidate["anchor"].isoformat())
+        control_id = deterministic_uuid("matched-control-v7-8h", event["id"], candidate["anchor"].isoformat())
         result.append(
             {
                 "control_id": control_id,
@@ -750,9 +752,9 @@ class MatchedControlBuilder:
         scan_id = str(job["scan_id"])
         controls_per_event = int(job.get("controls_per_event") or 5)
         prior_days = int(job.get("prior_days") or 10)
-        horizons = tuple(sorted({int(value) for value in (job.get("horizons_minutes") or [15, 30, 60, 120])}))
+        horizons = tuple(sorted({int(value) for value in (job.get("horizons_minutes") or [15, 30, 60, 120, 180, 480])}))
         contamination_before = int(job.get("contamination_before_minutes") or max(horizons))
-        contamination_after = int(job.get("contamination_after_minutes") or 180)
+        contamination_after = int(job.get("contamination_after_minutes") or 480)
         min_entry_notional = float(job.get("min_entry_notional") or 500)
         discovery_pct = int(job.get("discovery_pct") or 70)
         validation_pct = int(job.get("validation_pct") or 15)
@@ -768,6 +770,8 @@ class MatchedControlBuilder:
         if not scans:
             raise RuntimeError("Source scan not found")
         scan = scans[0]
+        if scan.get("event_definition_version") != "v7_rolling_8h" or int(scan.get("window_minutes") or 0) != 480:
+            raise ValueError("Version 7 matched controls require a completed 480-minute v7_rolling_8h scan")
         result_json = scan.get("result_json") or {}
         if result_json.get("window_start") and result_json.get("window_end_exclusive"):
             scan_start = parse_datetime(result_json["window_start"]).date()
@@ -848,7 +852,7 @@ class MatchedControlBuilder:
                     crossing_mask = rolling_crossing_mask(
                         frame,
                         threshold_pct=float(scan.get("threshold_pct") or 50),
-                        window_minutes=int(scan.get("window_minutes") or 180),
+                        window_minutes=int(scan.get("window_minutes") or 480),
                     )
                     known_anchors = [
                         parse_datetime(row.get("first_cross_trade_time") or row["first_cross_time"])
@@ -1009,9 +1013,9 @@ class MatchedControlBuilder:
             split_df = pd.DataFrame(split_summary)
 
             design = {
-                "version": "v3_matched_controls",
+                "version": "v7_matched_controls_8h",
                 "source_scan_id": scan_id,
-                "event_definition": "50% low-to-later-high crossing within conservative 180-minute rolling window",
+                "event_definition": "50% low-to-later-high crossing within conservative 480-minute rolling window",
                 "positive_sample": "saleable scanner event anchored to the exact crossing trade where available",
                 "controls_per_event_requested": controls_per_event,
                 "control_universe": "same Binance spot symbol and same chronological split only",

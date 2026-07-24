@@ -1,22 +1,45 @@
-# Binance 3-Hour 50% Surge Research App
+# Binance 8-Hour 50% Surge Research App
 
-Historical research infrastructure for Binance Spot coins that rose at least **50% within three hours** and were demonstrably saleable after the crossing.
+Historical research infrastructure for Binance Spot coins that rose at least **50% within eight hours** and were demonstrably saleable after the crossing.
 
 The app does not connect to a Binance trading account or place orders.
 
-## Version 6.0.0
+## Version 7.0.0
 
-V6 adds the two tests required after the baseline-aligned exploratory analysis:
+V7 changes the target event from a 50% rise within three hours to a 50% rise within **eight hours**.
 
-1. **Automatic fresh historical confirmation** of the frozen H1 precursor.
-2. **A continuous, executable-entry historical backtest** that is unlocked only when confirmation passes.
+That change applies throughout the research chain:
 
-The preferred evidence sequence is fixed before results are opened:
+- discovery scanning;
+- exact crossing verification;
+- saleability testing;
+- matched-control contamination checks;
+- baseline alignment;
+- ten-day context features;
+- fresh historical confirmation;
+- the precursor-to-continuation arm window.
 
-- Fresh confirmation: **1 January–1 March 2026**.
-- Sealed continuous backtest: **1 March–22 May 2026**.
+Prior three-hour scans and research packages remain in Supabase as historical records, but V7 deliberately excludes them from its workflow selectors. An eight-hour event definition requires a fresh scan and fresh downstream research.
 
-These periods do not overlap the already opened May–July dataset.
+## What remains unchanged
+
+- Latest-scan horizon: **60 completed UTC days** by default.
+- Threshold: **50%**.
+- Saleability: at least **500 quote units** of seller-initiated executed notional within five minutes after the exact crossing.
+- H1 precursor thresholds.
+- Late-momentum trigger thresholds.
+- Executable trade specification, including the separate **three-hour maximum hold**.
+
+The target event may unfold over eight hours; that does not automatically make an eight-hour hold optimal. The previously frozen three-hour trade hold remains separate so the research question changes only where intended.
+
+## Fresh V7 evidence sequence
+
+Because the January–February 2026 period was already opened under the three-hour definition, the recommended untouched V7 confirmation period is:
+
+- Fresh confirmation: **1 November 2025–1 January 2026**, end exclusive.
+- Sealed continuous backtest, only after confirmation passes: **1 March–22 May 2026**, end exclusive.
+
+These windows are fixed in `docs/V7_PREREGISTERED_PROTOCOL.json` before V7 results are opened.
 
 ## Frozen precursor: H1 weak-base ignition
 
@@ -33,7 +56,7 @@ Fresh confirmation uses only:
 - at least 500 quote units of prior five-minute liquidity;
 - uncontaminated same-coin controls.
 
-The app automatically opens all staged packages only after the rule and acceptance criteria have been frozen in code. No dashboard field can retune the thresholds.
+The app opens all staged packages only after the rule and acceptance criteria are frozen in code. No dashboard field can retune the thresholds.
 
 ## Frozen confirmation criteria
 
@@ -53,7 +76,7 @@ A failed confirmation does not unlock the continuous backtest.
 
 After every completed one-minute bar:
 
-1. H1 becomes true on a rising edge and arms the coin for three hours.
+1. H1 becomes true on a rising edge and arms the coin for eight hours.
 2. The unchanged late-momentum trigger must occur during that arm window.
 3. Entry begins only after the completed trigger minute.
 4. Historical buyer-initiated aggregate trades must prove a 500-quote-unit entry within 60 seconds.
@@ -78,23 +101,23 @@ The application uses Binance public Spot market-data endpoints and Binance's off
 
 No Binance API key is required.
 
-## Upgrade from V5
+## Upgrade from V6
 
 Run:
 
 ```text
-supabase/migrate_v5_to_v6.sql
+supabase/migrate_v6_to_v7.sql
 ```
 
-Then replace the GitHub repository files with V6 and wait for both Render services to redeploy.
+Then replace the GitHub repository files with the extracted V7 package and wait for both Render services to redeploy.
 
 The health route should show:
 
 ```json
-{"status":"ok","version":"6.0.0"}
+{"status":"ok","version":"7.0.0"}
 ```
 
-Follow `WINDOWS_UPDATE.md` for the simplest route.
+Follow `WINDOWS_UPDATE.md` for the simplest deployment route.
 
 ## Material limitations
 

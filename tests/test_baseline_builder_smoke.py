@@ -18,10 +18,10 @@ class FakeDb:
         if table == "binance_matched_control_jobs":
             return [{
                 "id": "matched-1", "scan_id": "scan-1", "status": "completed",
-                "discovery_pct": 70, "validation_pct": 15, "contamination_before_minutes": 180,
+                "discovery_pct": 70, "validation_pct": 15, "contamination_before_minutes": 480, "contamination_after_minutes": 480,
             }]
         if table == "binance_scan_jobs":
-            return [{"id": "scan-1", "window_end_date_exclusive": "2026-05-01"}]
+            return [{"id": "scan-1", "window_end_date_exclusive": "2025-12-01", "event_definition_version": "v7_rolling_8h", "window_minutes": 480}]
         return []
 
     def select_all(self, table, filters=None, order=None):
@@ -96,7 +96,7 @@ def test_baseline_builder_creates_exploratory_and_index_packages(tmp_path, monke
         "continuation_horizons_minutes": [15], "min_entry_notional": 500,
     })
     assert result["samples_total"] == 2
-    assert result["feature_rows"] == 22
+    assert result["feature_rows"] == 24
     assert result["continuation_rows"] == 2
     assert any(path.endswith("baseline_context_exploratory.zip") for path in db.uploads)
     assert any(path.endswith("baseline_context_index.zip") for path in db.uploads)

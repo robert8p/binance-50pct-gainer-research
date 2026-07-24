@@ -1,28 +1,32 @@
-# Simple Windows upgrade to V6
+# Simple Windows upgrade to V7
 
-## 1. Update Supabase
+## 1. Extract the package
 
-1. Extract the V6 ZIP.
-2. Open `supabase\migrate_v5_to_v6.sql` in Notepad.
-3. Press `Ctrl+A`, then `Ctrl+C`.
-4. Open **Supabase → SQL Editor → New query**.
-5. Paste and select **Run**.
+1. Download and extract `binance_8h_50pct_fresh_confirmation_backtest_v7_0_0.zip`.
+2. Open the extracted folder and confirm that `app`, `supabase`, `tests`, `render.yaml` and `requirements.txt` are directly inside it.
 
-The migration is additive and keeps all prior scans and research packages.
+## 2. Update Supabase
 
-## 2. Update GitHub
+1. Open `supabase\migrate_v6_to_v7.sql` in Notepad.
+2. Press `Ctrl+A`, then `Ctrl+C`.
+3. Open **Supabase → SQL Editor → New query**.
+4. Paste and select **Run**.
+
+The migration is additive. It keeps all prior scans and research packages, while changing V7 defaults to the eight-hour event definition.
+
+## 3. Update GitHub
 
 1. Open the existing GitHub repository.
 2. Select **Add file → Upload files**.
-3. Drag everything from inside the extracted V6 folder onto the upload page.
+3. Drag everything from inside the extracted V7 folder onto the upload page.
 4. Confirm replacement when GitHub shows existing files.
 5. Commit with:
 
 ```text
-Upgrade to v6 fresh confirmation and continuous backtest
+Upgrade to v7 eight-hour surge research
 ```
 
-## 3. Check Render
+## 4. Check Render
 
 Wait for both services to redeploy:
 
@@ -40,38 +44,48 @@ https://YOUR-RENDER-APP.onrender.com/health
 Expected result:
 
 ```json
-{"status":"ok","version":"6.0.0"}
+{"status":"ok","version":"7.0.0"}
 ```
 
-## 4. Run the fresh confirmation dataset
+## 5. Run a new eight-hour discovery scan
 
-### Step 1 — Fresh scan
+Do not reuse a three-hour scan. V7 deliberately excludes old three-hour jobs from the downstream dropdowns.
 
-Queue a scan with:
+For a current scan, leave the historical dates blank and use:
 
 ```text
-Historical start: 2026-01-01
-Historical end, exclusive: 2026-03-01
+Lookback: 60 completed UTC days
 Threshold: 50
-Rolling window: 3 hours
+Rolling window: 8 hours
 Minimum exit notional: 500
 Saleability window: 300 seconds
 ```
 
-### Step 3 — Matched controls
+For fresh historical confirmation, use this untouched V7 window instead:
 
-After the scan completes, queue matched controls with:
+```text
+Historical start: 2025-11-01
+Historical end, exclusive: 2026-01-01
+Threshold: 50
+Rolling window: 8 hours
+Minimum exit notional: 500
+Saleability window: 300 seconds
+```
+
+## 6. Build matched controls
+
+After the chosen V7 scan completes, queue matched controls with:
 
 ```text
 Controls per event: 5
 Predictor-history days: 10
-Decision horizons: 15,30,60,120,180
+Decision horizons: 15,30,60,120,180,480
 Minimum prior five-minute quote volume: 500
 ```
 
-The `180` horizon is mandatory for contamination protection.
+The `480` horizon is mandatory for eight-hour contamination protection.
 
-### Step 5 — Baseline context
+## 7. Build baseline-aligned context
 
 After matched controls complete:
 
@@ -80,9 +94,11 @@ Research treatment: Earlier untouched data — discovery/validation/sealed
 Minimum prior five-minute quote volume: 500
 ```
 
-### Step 6 — Automatic confirmation
+Use this mode only for the 1 November 2025–1 January 2026 fresh scan. Use exploratory mode for any already-opened period.
 
-Select the completed fresh baseline-context job and choose:
+## 8. Run automatic confirmation
+
+Select the completed fresh staged baseline-context job and choose:
 
 ```text
 Run automatic fresh confirmation
@@ -90,14 +106,14 @@ Run automatic fresh confirmation
 
 Do not manually download or inspect its discovery, validation or sealed files first.
 
-## 5. Interpret Step 6
+Interpret the result as follows:
 
 - **PASS:** Step 7 becomes available.
-- **FAIL:** Stop. Do not change H1 thresholds and rerun while calling it confirmation.
+- **FAIL:** Stop. Do not alter H1 thresholds and rerun while describing it as confirmation.
 
 Download `fresh_confirmation_results.zip` and upload it to ChatGPT.
 
-## 6. Run the sealed continuous backtest only after PASS
+## 9. Run the sealed continuous backtest only after PASS
 
 Use:
 
@@ -107,7 +123,7 @@ End, exclusive: 2026-05-22
 Quote preference: USDT,USDC,FDUSD
 ```
 
-All trading parameters are fixed automatically.
+The eight-hour target and arm window are fixed automatically. The trade itself retains its separately frozen three-hour maximum hold.
 
 The job can take many hours because it evaluates every completed minute across the current Binance Spot universe and downloads official aggregate-trade archives for candidate signals.
 

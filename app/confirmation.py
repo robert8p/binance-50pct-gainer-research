@@ -19,7 +19,7 @@ from .supabase import SupabaseClient
 
 H1_COLUMN = "hypothesis_h1_weak_base_ignition"
 FROZEN_ACCEPTANCE: dict[str, Any] = {
-    "version": "v6_h1_fresh_confirmation_1",
+    "version": "v7_h1_8h_fresh_confirmation_1",
     "primary_population": "baseline offset 0; feature_quality_status=pass; entry_liquidity_pass=true; uncontaminated controls",
     "minimum_evaluable_events": 15,
     "minimum_event_signal_rate": 0.25,
@@ -132,6 +132,8 @@ class FreshConfirmationBuilder:
 
     def run(self, job: dict[str, Any]) -> dict[str, Any]:
         job_id = str(job["id"])
+        if str(job.get("protocol_version") or FROZEN_ACCEPTANCE["version"]) != FROZEN_ACCEPTANCE["version"]:
+            raise ValueError("Confirmation protocol does not match the frozen V7 eight-hour protocol")
         source_id = str(job["baseline_context_job_id"])
         source_rows = self.db.select(
             "binance_baseline_context_jobs",
@@ -145,6 +147,20 @@ class FreshConfirmationBuilder:
             raise ValueError("Source baseline-context job is not complete")
         if source_job.get("research_mode") != "fresh_staged":
             raise ValueError("Confirmation requires a fresh_staged baseline-context job")
+        matched_rows = self.db.select(
+            "binance_matched_control_jobs",
+            filters={"id": f"eq.{source_job['matched_control_job_id']}"},
+            limit=1,
+        )
+        if not matched_rows:
+            raise ValueError("Source matched-control job not found")
+        scan_rows = self.db.select(
+            "binance_scan_jobs",
+            filters={"id": f"eq.{matched_rows[0]['scan_id']}"},
+            limit=1,
+        )
+        if not scan_rows or scan_rows[0].get("event_definition_version") != "v7_rolling_8h" or int(scan_rows[0].get("window_minutes") or 0) != 480:
+            raise ValueError("V7 confirmation requires baseline context derived from a 480-minute v7_rolling_8h scan")
 
         work = Path(tempfile.mkdtemp(prefix=f"confirmation-{job_id}-", dir=self.temp_root))
         try:
@@ -224,7 +240,7 @@ class FreshConfirmationBuilder:
             }
             (work / "confirmation_decision.json").write_text(json.dumps(decision, indent=2, default=str), encoding="utf-8")
             (work / "README.md").write_text(
-                "# Fresh H1 confirmation\n\n"
+                "# Fresh H1 confirmation for the eight-hour surge target\n\n"
                 f"Decision: **{'PASS — continuous sealed backtest unlocked' if passed else 'FAIL — do not run the trading backtest'}**.\n\n"
                 "H1 thresholds and acceptance criteria were frozen before source packages were downloaded. No retuning is performed.\n",
                 encoding="utf-8",

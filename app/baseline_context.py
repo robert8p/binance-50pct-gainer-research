@@ -25,13 +25,14 @@ from .matched_controls import (
 from .supabase import SupabaseClient
 
 # These offsets are fixed research design, not tunable thresholds.
-BASELINE_SNAPSHOT_OFFSETS = (14400, 10080, 7200, 4320, 2880, 1440, 720, 360, 180, 60, 0)
+BASELINE_SNAPSHOT_OFFSETS = (14400, 10080, 7200, 4320, 2880, 1440, 720, 480, 360, 180, 60, 0)
 CONTINUATION_HORIZONS = (15,)
-FRESH_EVIDENCE_CUTOFF = date(2026, 5, 22)
+FRESH_EVIDENCE_CUTOFF = date(2026, 1, 1)
 
 PREREGISTERED_HYPOTHESES: dict[str, Any] = {
-    "version": "v5_baseline_aligned_hypotheses_1",
+    "version": "v7_8h_baseline_aligned_hypotheses_1",
     "created_before_fresh_period_is_opened": True,
+    "target_event": "saleable >=50% low-to-later-high rise within a conservative 480-minute rolling window",
     "primary_evaluation_snapshot": "baseline_start (offset 0; bars end one minute before baseline)",
     "hypotheses": [
         {
@@ -94,8 +95,8 @@ def _event_duration_minutes(event: dict[str, Any]) -> int:
     else:
         baseline, _ = _event_baseline_minute(event)
         minutes = int((_event_cross_minute(event) - baseline).total_seconds() // 60)
-    if not 1 <= minutes <= 180:
-        raise ValueError(f"Event {event.get('id')} baseline-to-cross duration {minutes} is outside 1..180 minutes")
+    if not 1 <= minutes <= 480:
+        raise ValueError(f"Event {event.get('id')} baseline-to-cross duration {minutes} is outside 1..480 minutes")
     return minutes
 
 
@@ -262,14 +263,14 @@ def _outcome_diagnostics(frame: pd.DataFrame, sample: dict[str, Any], entry_pric
     baseline = pd.Timestamp(parse_datetime(sample["baseline_anchor_time"]))
     cross = pd.Timestamp(parse_datetime(sample["cross_anchor_time"]))
     segment = frame.loc[baseline:cross]
-    next_3h = frame.loc[baseline : baseline + pd.Timedelta(minutes=179)]
+    next_8h = frame.loc[baseline : baseline + pd.Timedelta(minutes=479)]
     result: dict[str, Any] = {
         "outcome_baseline_to_cross_observed_fraction": float(segment["observed"].mean()) if len(segment) else 0.0,
-        "outcome_next_3h_from_baseline_observed_fraction": float(next_3h["observed"].mean()) if len(next_3h) else 0.0,
+        "outcome_next_8h_from_baseline_observed_fraction": float(next_8h["observed"].mean()) if len(next_8h) else 0.0,
     }
     baseline_low = segment["low"].iloc[0] if len(segment) and pd.notna(segment["low"].iloc[0]) else None
     baseline_close = segment["close"].iloc[0] if len(segment) and pd.notna(segment["close"].iloc[0]) else None
-    for prefix, values in (("baseline_to_cross", segment), ("next_3h_from_baseline", next_3h)):
+    for prefix, values in (("baseline_to_cross", segment), ("next_8h_from_baseline", next_8h)):
         high = values["high"].max(skipna=True) if len(values) else None
         low = values["low"].min(skipna=True) if len(values) else None
         denominator = float(baseline_low) if baseline_low is not None and float(baseline_low) > 0 else baseline_close
@@ -401,21 +402,27 @@ class BaselineContextBuilder:
         return samples, split_summary, {"events": events, "matches": matches}
 
     def _validate_fresh_design(self, matched_job: dict[str, Any]) -> None:
-        if int(matched_job.get("contamination_before_minutes") or 0) < 180:
+        if int(matched_job.get("contamination_before_minutes") or 0) < 480:
             raise ValueError(
-                "Fresh baseline-aligned evidence requires matched controls created with at least 180 minutes of pre-anchor contamination protection"
+                "Fresh baseline-aligned evidence requires matched controls created with at least 480 minutes of pre-anchor contamination protection"
             )
         scan_rows = self.db.select("binance_scan_jobs", filters={"id": f"eq.{matched_job['scan_id']}"}, limit=1)
         if not scan_rows:
             raise RuntimeError("Source scan not found")
         scan = scan_rows[0]
+        if scan.get("event_definition_version") != "v7_rolling_8h" or int(scan.get("window_minutes") or 0) != 480:
+            raise ValueError("Fresh V7 evidence requires a 480-minute v7_rolling_8h source scan")
+        if int(matched_job.get("contamination_after_minutes") or 0) < 480:
+            raise ValueError(
+                "Fresh V7 evidence requires at least 480 minutes of post-anchor contamination protection"
+            )
         end_value = scan.get("window_end_date_exclusive")
         if not end_value:
             raise ValueError("Fresh evidence requires an explicit historical scan window")
         end_day = date.fromisoformat(str(end_value))
         if end_day > FRESH_EVIDENCE_CUTOFF:
             raise ValueError(
-                f"Fresh evidence must end on or before {FRESH_EVIDENCE_CUTOFF.isoformat()} to remain separate from the opened May-July dataset"
+                f"Fresh evidence must end on or before {FRESH_EVIDENCE_CUTOFF.isoformat()} to remain separate from the opened January-February and May-July datasets"
             )
 
     def run(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -423,15 +430,15 @@ class BaselineContextBuilder:
         matched_job_id = str(job["matched_control_job_id"])
         prior_days = int(job.get("prior_days") or 10)
         if prior_days != 10:
-            raise ValueError("Version 5 is preregistered for exactly 10 context days")
+            raise ValueError("Version 7 is preregistered for exactly 10 context days")
         offsets = tuple(int(value) for value in (job.get("snapshot_offsets_minutes") or BASELINE_SNAPSHOT_OFFSETS))
         if offsets != BASELINE_SNAPSHOT_OFFSETS:
-            raise ValueError("Version 5 snapshot offsets are fixed and may not be retuned")
+            raise ValueError("Version 7 snapshot offsets are fixed and may not be retuned")
         continuation_horizons = tuple(
             int(value) for value in (job.get("continuation_horizons_minutes") or CONTINUATION_HORIZONS)
         )
         if continuation_horizons != CONTINUATION_HORIZONS:
-            raise ValueError("Version 5 continuation horizon is frozen at 15 minutes")
+            raise ValueError("Version 7 continuation horizon is frozen at 15 minutes")
         min_entry_notional = float(job.get("min_entry_notional") or 500)
         research_mode = str(job.get("research_mode") or "exploratory_reuse")
         if research_mode not in {"exploratory_reuse", "fresh_staged"}:
@@ -587,7 +594,7 @@ class BaselineContextBuilder:
             source_df = pd.DataFrame(source_manifest).drop_duplicates() if source_manifest else pd.DataFrame()
             split_df = pd.DataFrame(split_summary)
             design = {
-                "version": "v5_baseline_aligned_context",
+                "version": "v7_8h_baseline_aligned_context",
                 "source_matched_control_job_id": matched_job_id,
                 "source_scan_id": str(matched_job["scan_id"]),
                 "research_mode": research_mode,

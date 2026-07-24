@@ -198,7 +198,7 @@ class ResearchBuilder:
                 json.dumps(job, indent=2, default=str), encoding="utf-8"
             )
             (index_dir / "README.txt").write_text(
-                "Binance rolling three-hour >50% surge research index. Event-day predictor data ends before the first threshold-crossing minute.\n"
+                "Binance rolling eight-hour >50% surge research index. Event-day predictor data ends before the first threshold-crossing minute.\n"
                 "Historical saleability is inferred from executed seller-initiated aggregate trades at any post-crossing price, not displayed order-book depth.\n",
                 encoding="utf-8",
             )

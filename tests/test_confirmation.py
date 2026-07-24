@@ -6,6 +6,7 @@ from app.confirmation import FROZEN_ACCEPTANCE, _evaluate
 
 
 def test_frozen_confirmation_acceptance_is_not_tunable() -> None:
+    assert FROZEN_ACCEPTANCE["version"] == "v7_h1_8h_fresh_confirmation_1"
     assert FROZEN_ACCEPTANCE["minimum_event_signal_rate"] == 0.25
     assert FROZEN_ACCEPTANCE["maximum_control_signal_rate"] == 0.15
     assert FROZEN_ACCEPTANCE["threshold_retuning_permitted"] is False

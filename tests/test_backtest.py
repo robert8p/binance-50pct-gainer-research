@@ -78,4 +78,6 @@ def test_execution_uses_aggressor_side_and_applies_fees() -> None:
     assert result["exit_reason"] == "take_profit"
     assert result["gross_return_pct"] > result["net_return_pct"]
     assert result["net_pnl_quote"] > 0
+    assert BACKTEST_PROTOCOL["continuation_rule"]["arm_window_minutes"] == 480
+    assert BACKTEST_PROTOCOL["execution"]["maximum_hold_minutes"] == 180
     assert BACKTEST_PROTOCOL["execution"]["maximum_filled_entries_per_utc_day"] == 5

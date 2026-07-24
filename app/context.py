@@ -26,9 +26,9 @@ from .matched_controls import (
 )
 from .supabase import SupabaseClient
 
-CONTEXT_WINDOWS = (15, 30, 60, 120, 180, 360, 720, 1440, 2880, 4320, 7200, 10080, 14400)
+CONTEXT_WINDOWS = (15, 30, 60, 120, 180, 360, 480, 720, 1440, 2880, 4320, 7200, 10080, 14400)
 REFERENCE_SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT")
-REFERENCE_WINDOWS = (60, 180, 1440, 4320, 10080, 14400)
+REFERENCE_WINDOWS = (60, 180, 480, 1440, 4320, 10080, 14400)
 
 
 def _zip_directory(source: Path, destination: Path) -> None:
@@ -333,8 +333,8 @@ def compute_context_feature_row(
     outcome_start = pd.Timestamp(floor_minute(decision_time))
     anchor_open = pd.Timestamp(floor_minute(anchor))
     to_anchor = frame.loc[outcome_start:anchor_open]
-    next_3h = frame.loc[outcome_start : outcome_start + pd.Timedelta(minutes=179)]
-    for prefix, segment in (("to_anchor", to_anchor), ("next_3h", next_3h)):
+    next_8h = frame.loc[outcome_start : outcome_start + pd.Timedelta(minutes=479)]
+    for prefix, segment in (("to_anchor", to_anchor), ("next_8h", next_8h)):
         high = segment["high"].max(skipna=True)
         low = segment["low"].min(skipna=True)
         row[f"outcome_{prefix}_max_gain_pct"] = safe_pct(float(high), entry) if pd.notna(high) else None

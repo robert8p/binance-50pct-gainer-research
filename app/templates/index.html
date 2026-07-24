@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Binance 3-Hour 50% Surge Research</title>
+  <title>Binance 8-Hour 50% Surge Research</title>
   <style>
     :root { color-scheme: dark; --bg:#0b0f14; --panel:#141a22; --line:#27303d; --text:#f3f5f7; --muted:#9ba7b4; --accent:#f3ba2f; --good:#65d68a; }
     * { box-sizing:border-box; } body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); }
@@ -18,9 +18,9 @@
   </style>
 </head>
 <body><main>
-  <h1>Binance 3-Hour 50% Surge Research</h1>
-  <p class="muted">v6.0 adds automatic fresh confirmation and a sealed continuous executable-entry backtest. Parameters are frozen before the historical results are opened.</p>
-  <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative three-hour rolling window. The price only needs to touch the threshold.</p>
+  <h1>Binance 8-Hour 50% Surge Research</h1>
+  <p class="muted">v7.0 broadens the target event to a 50% rise within eight hours while preserving saleability checks, staged confirmation, and the sealed executable-entry backtest.</p>
+  <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative eight-hour rolling window. The price only needs to touch the threshold.</p>
   <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not guarantee a fill at the threshold.</p>
 
   <div class="grid">
@@ -32,7 +32,7 @@
         <label>Optional historical end date (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date">
         <p class="muted small">Leave both dates blank for the latest 60 days. For a fresh earlier round, enter both dates; maximum span 180 days.</p>
         <label>Threshold increase (%)</label><input name="threshold_pct" type="number" value="50" step="0.1">
-        <label>Rolling increase window</label><input value="3 hours (180 minutes)" disabled>
+        <label>Rolling increase window</label><input value="8 hours (480 minutes)" disabled>
         <label>Canonical quote preference</label><input name="quote_assets" value="USDT,USDC,FDUSD">
         <label>Minimum executed seller-side exit notional</label><input name="min_exit_notional" type="number" value="500" step="1">
         <label>Saleability window after crossing (seconds)</label><input name="confirmation_window_seconds" type="number" value="300" min="30" max="3600">
@@ -63,7 +63,7 @@
         </select>
         <label>Same-coin controls per event</label><input name="controls_per_event" type="number" value="5" min="1" max="10">
         <label>Predictor-history days</label><input name="prior_days" type="number" value="10" min="1" max="30">
-        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120,180">
+        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120,180,480">
         <label>Minimum prior 5-minute quote volume for controls</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
         <button>Queue matched-control package</button>
       </form>
@@ -81,11 +81,11 @@
           <option value="fresh_staged">New untouched data — staged discovery/validation/sealed</option>
         </select>
         <label>Context history</label><input value="10 days" disabled>
-        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120">
+        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120,180,480">
         <label>Minimum prior 5-minute quote volume</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
         <button>Queue ten-day context package</button>
       </form>
-      <p class="muted small">For the already analysed 63-event job, choose exploratory only. Fresh staged mode is only valid for a newly collected historical job whose later packages have not been opened.</p>
+      <p class="muted small">V7 only lists eight-hour matched-control jobs. Use exploratory for opened data; use fresh staged only for a genuinely untouched historical scan.</p>
     </section>
 
     <section class="card">
@@ -95,15 +95,15 @@
           {% for job in completed_matched_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — {{ job.controls_created or 0 }} controls — {{ job.id[:8] }}</option>{% endfor %}
         </select>
         <label>Research treatment</label><select name="research_mode">
-          <option value="exploratory_reuse">Existing May–July data — exploratory alignment audit</option>
-          <option value="fresh_staged">Earlier untouched data — discovery/validation/sealed</option>
+          <option value="exploratory_reuse">Existing/opened eight-hour data — exploratory alignment audit</option>
+          <option value="fresh_staged">Untouched data ending by 1 Jan 2026 — discovery/validation/sealed</option>
         </select>
-        <label>Snapshots before baseline</label><input value="10d, 7d, 5d, 3d, 48h, 24h, 12h, 6h, 3h, 1h, baseline" disabled>
+        <label>Snapshots before baseline</label><input value="10d, 7d, 5d, 3d, 48h, 24h, 12h, 8h, 6h, 3h, 1h, baseline" disabled>
         <label>Frozen continuation check</label><input value="15 minutes before the +50% crossing" disabled>
         <label>Minimum prior 5-minute quote volume</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
         <button>Queue baseline-aligned package</button>
       </form>
-      <p class="muted small">For the existing 63-event job, choose exploratory. Fresh staged mode requires a new explicit historical scan ending on or before 22 May 2026 and matched controls built with the 180-minute horizon included.</p>
+      <p class="muted small">Fresh staged mode requires a new V7 scan ending on or before 1 January 2026 and matched controls containing the mandatory 480-minute horizon. Prior three-hour jobs are deliberately excluded.</p>
     </section>
 
     <section class="card">
@@ -141,7 +141,7 @@
   </section>
 
   <section class="card"><h2>Discovery scans</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Progress</th><th>3h candidates</th><th>Saleable</th><th>Failures</th><th>Downloads</th></tr></thead>
+    <thead><tr><th>Created</th><th>Status</th><th>Progress</th><th>8h candidates</th><th>Saleable</th><th>Failures</th><th>Downloads</th></tr></thead>
     <tbody>{% for scan in scans %}<tr>
       <td>{{ scan.created_at }}<br><span class="muted">{{ scan.id[:8] }}</span></td><td class="status">{{ scan.status }}</td>
       <td>{{ scan.symbols_processed or 0 }}/{{ scan.symbols_total or 0 }}</td><td>{{ scan.candidates_found or 0 }}</td><td>{{ scan.events_found or 0 }}</td><td>{{ scan.failures or 0 }}</td>
@@ -204,7 +204,7 @@
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
-  <section class="card"><h2>Baseline-aligned downloads</h2><p class="warning">The existing May–July package is exploratory. For fresh staged evidence, do not open validation or sealed test early.</p><div class="scroll"><table>
+  <section class="card"><h2>Baseline-aligned downloads</h2><p class="warning">Any previously opened package is exploratory. For fresh V7 staged evidence, do not open validation or sealed-test files before Step 6.</p><div class="scroll"><table>
     <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
     <tbody>{% for file in baseline_context_files %}<tr>
       <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index/exploratory" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>

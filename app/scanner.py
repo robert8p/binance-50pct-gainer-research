@@ -34,10 +34,10 @@ class Scanner:
 
     def run(self, job: dict[str, Any]) -> dict[str, Any]:
         job_id = str(job["id"])
-        event_definition_version = str(job.get("event_definition_version") or "v2_rolling_3h")
+        event_definition_version = str(job.get("event_definition_version") or "v7_rolling_8h")
         lookback = int(job.get("lookback_days") or 60)
         threshold_pct = float(job.get("threshold_pct") or 50)
-        window_minutes = int(job.get("window_minutes") or 180)
+        window_minutes = int(job.get("window_minutes") or 480)
         min_exit = float(job["min_exit_notional"])
         confirmation_seconds = int(job["confirmation_window_seconds"])
         quote_assets = [x.strip().upper() for x in (job.get("quote_assets") or ["USDT"]) if x.strip()]
@@ -157,7 +157,7 @@ class Scanner:
 
                     # Cheap necessary-condition filter only. It deliberately
                     # over-includes days; minute-level ordering decides whether a
-                    # valid <=3-hour move actually occurred. First listing days
+                    # valid <=8-hour move actually occurred. First listing days
                     # are included even when no prior daily bar exists.
                     possible_baseline = min(float(previous["low"]), float(current["low"]))
                     if float(current["high"]) + 1e-15 < possible_baseline * factor:

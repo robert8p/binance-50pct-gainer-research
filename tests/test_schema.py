@@ -22,7 +22,7 @@ def test_schema_is_additive_and_contains_required_tables():
 def test_schema_contains_v2_additive_migration_and_defaults():
     sql = Path("supabase/schema.sql").read_text(encoding="utf-8").lower()
     assert "lookback_days integer not null default 60" in sql
-    assert "window_minutes integer not null default 180" in sql
+    assert "window_minutes integer not null default 480" in sql
     assert "alter table binance_scan_jobs add column if not exists candidates_found" in sql
     assert "alter table binance_gainer_events add column if not exists baseline_trade_time" in sql
     assert "alter table binance_gainer_events add column if not exists seller_taker_notional_any_price" in sql

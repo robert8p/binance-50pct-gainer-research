@@ -50,17 +50,17 @@ def test_temporal_split_keeps_whole_dates_and_all_three_splits() -> None:
 
 def test_rolling_crossing_uses_prior_minute_and_conservative_window() -> None:
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    frame = make_frame(start, 181, price=101.0)
+    frame = make_frame(start, 481, price=101.0)
     frame.loc[start, "low"] = 100.0
-    frame.loc[start + timedelta(minutes=179), "high"] = 150.0
-    mask = rolling_crossing_mask(frame, threshold_pct=50, window_minutes=180)
-    assert bool(mask.loc[start + timedelta(minutes=179)]) is True
+    frame.loc[start + timedelta(minutes=479), "high"] = 150.0
+    mask = rolling_crossing_mask(frame, threshold_pct=50, window_minutes=480)
+    assert bool(mask.loc[start + timedelta(minutes=479)]) is True
 
-    frame.loc[start + timedelta(minutes=179), "high"] = 149.99
-    frame.loc[start + timedelta(minutes=180), "high"] = 150.0
-    mask = rolling_crossing_mask(frame, threshold_pct=50, window_minutes=180)
-    # The t=0 baseline is now outside the conservative 179-minute open-time gap.
-    assert bool(mask.loc[start + timedelta(minutes=180)]) is False
+    frame.loc[start + timedelta(minutes=479), "high"] = 149.99
+    frame.loc[start + timedelta(minutes=480), "high"] = 150.0
+    mask = rolling_crossing_mask(frame, threshold_pct=50, window_minutes=480)
+    # The t=0 baseline is now outside the conservative 479-minute open-time gap.
+    assert bool(mask.loc[start + timedelta(minutes=480)]) is False
 
 
 def test_features_do_not_use_current_or_future_minutes() -> None:
@@ -119,7 +119,7 @@ def test_control_selection_excludes_event_and_nearby_surge_windows() -> None:
     surge_cross_time = datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc)
     frame.loc[surge_low_time, "low"] = 100.0
     frame.loc[surge_cross_time, "high"] = 150.0
-    crossing = rolling_crossing_mask(frame, threshold_pct=50, window_minutes=180)
+    crossing = rolling_crossing_mask(frame, threshold_pct=50, window_minutes=480)
 
     event_anchor = datetime(2026, 5, 18, 12, 0, 20, tzinfo=timezone.utc)
     event = {
@@ -140,10 +140,10 @@ def test_control_selection_excludes_event_and_nearby_surge_windows() -> None:
         crossing_mask=crossing,
         known_event_anchors=[event_anchor],
         controls_per_event=5,
-        horizons=(15, 30, 60, 120),
+        horizons=(15, 30, 60, 120, 180, 480),
         prior_days=2,
-        contamination_before_minutes=120,
-        contamination_after_minutes=180,
+        contamination_before_minutes=480,
+        contamination_after_minutes=480,
         min_entry_notional=500,
         used_counts=Counter(),
     )

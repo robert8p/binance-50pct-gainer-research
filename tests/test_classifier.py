@@ -62,7 +62,7 @@ def test_rolling_surge_can_cross_utc_midnight():
         event_day_start=day_start,
         event_day_end=day_start + timedelta(days=1),
         threshold_pct=50,
-        window_minutes=180,
+        window_minutes=480,
     )
     assert event is not None
     assert event["baseline_price"] == 100
@@ -79,22 +79,22 @@ def test_rolling_surge_excludes_same_minute_move():
         event_day_start=day_start,
         event_day_end=day_start + timedelta(days=1),
         threshold_pct=50,
-        window_minutes=180,
+        window_minutes=480,
     ) is None
 
 
-def test_rolling_surge_conservatively_excludes_180_minute_open_gap():
+def test_rolling_surge_conservatively_excludes_480_minute_open_gap():
     from app.classifier import first_rolling_surge
 
     day_start = datetime(2026, 7, 1, tzinfo=timezone.utc)
     rows = [
         _minute(day_start, 100, 101),
-        _minute(day_start + timedelta(minutes=180), 120, 151),
+        _minute(day_start + timedelta(minutes=480), 120, 151),
     ]
     assert first_rolling_surge(
         rows,
         event_day_start=day_start,
         event_day_end=day_start + timedelta(days=1),
         threshold_pct=50,
-        window_minutes=180,
+        window_minutes=480,
     ) is None

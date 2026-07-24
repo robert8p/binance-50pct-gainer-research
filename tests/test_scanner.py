@@ -26,9 +26,9 @@ class FakeBinance:
         assert interval == "1m"
         base = int(self.day_start.timestamp() * 1000)
         rows = []
-        for minute in range(180):
+        for minute in range(480):
             open_time = base + minute * 60_000
-            high = 151 if minute == 179 else 101
+            high = 151 if minute == 479 else 101
             low = 100 if minute == 0 else 100.5
             rows.append(
                 [
@@ -50,14 +50,14 @@ class FakeBinance:
 
     def aggregate_trades(self, symbol, start_ms, end_ms, max_pages=500):
         base = int(self.day_start.timestamp() * 1000)
-        crossing = base + 179 * 60_000
+        crossing = base + 479 * 60_000
         if start_ms == base:
             return ([{"a": 1, "p": "100", "q": "1", "f": 1, "l": 1, "T": base + 50_000, "m": False, "M": True}], False)
         if start_ms == crossing and end_ms - start_ms <= 60_000:
             return ([{"a": 2, "p": "150", "q": "1", "f": 2, "l": 2, "T": crossing + 1_000, "m": False, "M": True}], False)
         if start_ms == crossing + 1_000:
             # Exit liquidity exists below the +50% threshold. This must still pass
-            # because v2 saleability proves executability, not price persistence.
+            # because V7 saleability proves executability, not price persistence.
             return ([{"a": 3, "p": "120", "q": "5", "f": 3, "l": 3, "T": start_ms + 2_000, "m": True, "M": True}], False)
         return ([], False)
 
@@ -94,9 +94,9 @@ def test_candidate_records_saleable_event_without_price_persistence():
         previous,
         current,
         True,
-        "v2_rolling_3h",
+        "v7_rolling_8h",
         50.0,
-        180,
+        480,
         500.0,
         300,
     )
@@ -106,7 +106,7 @@ def test_candidate_records_saleable_event_without_price_persistence():
     assert event["seller_taker_notional_any_price"] == 600.0
     assert event["seller_taker_notional_at_or_above"] == 0.0
     assert event["minimum_exit_vwap"] == pytest.approx(120.0)
-    assert event["exact_baseline_to_cross_seconds"] < 3 * 60 * 60
+    assert event["exact_baseline_to_cross_seconds"] < 8 * 60 * 60
     assert event["first_cross_trade_time"].endswith("+00:00")
     assert db.rows["binance_event_agg_trades"][0]["event_id"] == event["id"]
 
@@ -129,9 +129,9 @@ def test_unresolved_exact_cross_cannot_pass_saleability():
         previous,
         current,
         True,
-        "v2_rolling_3h",
+        "v7_rolling_8h",
         50.0,
-        180,
+        480,
         500.0,
         300,
     )

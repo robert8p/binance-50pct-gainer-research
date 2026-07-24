@@ -20,7 +20,7 @@ from .matched_controls import MinuteArchiveCache
 from .supabase import SupabaseClient
 
 BACKTEST_PROTOCOL: dict[str, Any] = {
-    "version": "v6_continuous_executable_backtest_1",
+    "version": "v7_continuous_executable_backtest_1",
     "context_rule": {
         "id": "H1_WEAK_BASE_IGNITION",
         "ret_prior_1d_to_7d_pct_max": 5.0,
@@ -29,7 +29,7 @@ BACKTEST_PROTOCOL: dict[str, Any] = {
         "rising_edge_only": True,
     },
     "continuation_rule": {
-        "arm_window_minutes": 180,
+        "arm_window_minutes": 480,
         "minimum_components": 3,
         "ret_15m_pct_min": 0.9,
         "quote_volume_15m_vs_prior_7d_same_time_min": 12.0,
@@ -250,7 +250,7 @@ def compute_signal_frame(frame: pd.DataFrame, start: datetime, end_exclusive: da
     return result.loc[mask].copy()
 
 
-def candidate_signals(symbol: str, signal_frame: pd.DataFrame, arm_minutes: int = 180) -> list[dict[str, Any]]:
+def candidate_signals(symbol: str, signal_frame: pd.DataFrame, arm_minutes: int = 480) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     next_arm_allowed: pd.Timestamp | None = None
     rising_times = signal_frame.index[signal_frame["h1_rising"].fillna(False)]
@@ -498,6 +498,8 @@ class ContinuousBacktestBuilder:
         return sorted(item["symbol"] for item in by_base.values())
 
     def _validate_job(self, job: dict[str, Any]) -> tuple[date, date]:
+        if str(job.get("protocol_version") or BACKTEST_PROTOCOL["version"]) != BACKTEST_PROTOCOL["version"]:
+            raise ValueError("Backtest protocol does not match the frozen V7 protocol")
         confirmation_id = str(job["confirmation_job_id"])
         rows = self.db.select("binance_confirmation_jobs", filters={"id": f"eq.{confirmation_id}"}, limit=1)
         if not rows or rows[0].get("status") != "completed" or not bool(rows[0].get("passed")):
@@ -521,7 +523,9 @@ class ContinuousBacktestBuilder:
         scan_rows = self.db.select(
             "binance_scan_jobs", filters={"id": f"eq.{matched_rows[0]['scan_id']}"}, limit=1,
         ) if matched_rows else []
-        if scan_rows and scan_rows[0].get("window_end_date_exclusive"):
+        if not scan_rows or scan_rows[0].get("event_definition_version") != "v7_rolling_8h" or int(scan_rows[0].get("window_minutes") or 0) != 480:
+            raise ValueError("V7 backtest requires a passing confirmation derived from the 480-minute event definition")
+        if scan_rows[0].get("window_end_date_exclusive"):
             confirmation_end = date.fromisoformat(str(scan_rows[0]["window_end_date_exclusive"]))
             if start < confirmation_end:
                 raise ValueError(
@@ -602,7 +606,7 @@ class ContinuousBacktestBuilder:
                 candidates_df = pd.DataFrame(columns=["symbol", "signal_decision_time"])
             else:
                 candidates_df["signal_decision_time"] = pd.to_datetime(candidates_df["signal_decision_time"], utc=True)
-                # Keep every entry and possible three-hour exit strictly inside the sealed window.
+                # Keep every entry and possible fixed three-hour exit strictly inside the sealed window.
                 outcome_buffer = pd.Timedelta(
                     minutes=int(BACKTEST_PROTOCOL["execution"]["maximum_hold_minutes"]),
                     seconds=int(BACKTEST_PROTOCOL["execution"]["entry_fill_window_seconds"])
@@ -698,7 +702,7 @@ class ContinuousBacktestBuilder:
                 "performance": performance,
                 "quality": quality,
                 "automatic_trading_decision": "research_output_only",
-                "pass_fail_not_preregistered": "V6 measures the fixed strategy; no profitability threshold is used to retune it.",
+                "pass_fail_not_preregistered": "V7 measures the fixed strategy; no profitability threshold is used to retune it.",
             }
 
             candidates_df.to_csv(work / "candidate_signals.csv", index=False)
@@ -709,7 +713,7 @@ class ContinuousBacktestBuilder:
             (work / "backtest_results.json").write_text(json.dumps(decision, indent=2, default=str), encoding="utf-8")
             (work / "README.md").write_text(
                 "# Continuous executable historical backtest\n\n"
-                "This package evaluates the frozen H1-plus-continuation sequence after every completed one-minute bar. "
+                "This package evaluates the frozen H1-plus-continuation sequence for the eight-hour target event after every completed one-minute bar. "
                 "Entries and exits are reconstructed from historical aggregate trades. Treat the current-universe survivorship warning as material.\n",
                 encoding="utf-8",
             )

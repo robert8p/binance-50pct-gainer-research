@@ -73,7 +73,7 @@ def test_event_and_control_use_symmetric_minute_level_baselines() -> None:
 
 
 def test_fixed_snapshot_offsets_cover_ten_days_to_baseline() -> None:
-    assert BASELINE_SNAPSHOT_OFFSETS == (14400, 10080, 7200, 4320, 2880, 1440, 720, 360, 180, 60, 0)
+    assert BASELINE_SNAPSHOT_OFFSETS == (14400, 10080, 7200, 4320, 2880, 1440, 720, 480, 360, 180, 60, 0)
 
 
 def test_baseline_features_do_not_use_baseline_or_later_bars() -> None:

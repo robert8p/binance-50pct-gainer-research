@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.0.0
+
+- Broadened the qualifying rise window from three hours to eight hours.
+- Updated controls, contamination audits, baseline alignment and outcome diagnostics to the 480-minute event definition.
+- Retained the separate three-hour maximum trade hold; only the target-event and precursor-to-continuation windows changed.
+- Prior three-hour scans and research packages remain historical reference and are excluded from V7 workflow dropdowns.
+- Added Supabase migration `migrate_v6_to_v7.sql`.
+
 ## 6.0.0
 
 - Added automatic H1 fresh historical confirmation.

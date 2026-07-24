@@ -7,9 +7,9 @@ create table if not exists binance_scan_jobs (
   started_at timestamptz,
   completed_at timestamptz,
   heartbeat_at timestamptz,
-  event_definition_version text not null default 'v2_rolling_3h',
+  event_definition_version text not null default 'v7_rolling_8h',
   lookback_days integer not null default 60,
-  window_minutes integer not null default 180,
+  window_minutes integer not null default 480,
   threshold_pct numeric not null default 50,
   quote_assets jsonb not null default '["USDT","USDC","FDUSD"]'::jsonb,
   min_exit_notional numeric not null default 500,
@@ -66,12 +66,12 @@ create table if not exists binance_gainer_events (
   base_asset text not null,
   quote_asset text not null,
   event_date date not null,
-  event_definition_version text not null default 'v2_rolling_3h',
+  event_definition_version text not null default 'v7_rolling_8h',
   previous_day_close numeric not null,
   previous_day_bar_available boolean not null default true,
   threshold_pct numeric not null,
   threshold_price numeric not null,
-  window_minutes integer not null default 180,
+  window_minutes integer not null default 480,
   measurement_method text not null default 'rolling prior-minute low to later-minute high',
   baseline_time timestamptz,
   baseline_price numeric,
@@ -317,9 +317,9 @@ create table if not exists binance_matched_control_jobs (
   heartbeat_at timestamptz,
   controls_per_event integer not null default 5 check (controls_per_event between 1 and 10),
   prior_days integer not null default 10 check (prior_days between 1 and 30),
-  horizons_minutes jsonb not null default '[15,30,60,120]'::jsonb,
+  horizons_minutes jsonb not null default '[15,30,60,120,180,480]'::jsonb,
   contamination_before_minutes integer not null default 120,
-  contamination_after_minutes integer not null default 180,
+  contamination_after_minutes integer not null default 480,
   min_entry_notional numeric not null default 500,
   discovery_pct integer not null default 70,
   validation_pct integer not null default 15,
@@ -408,8 +408,8 @@ create table if not exists binance_context_jobs (
   completed_at timestamptz,
   heartbeat_at timestamptz,
   prior_days integer not null default 10 check (prior_days = 10),
-  horizons_minutes jsonb not null default '[15,30,60,120]'::jsonb,
-  windows_minutes jsonb not null default '[15,30,60,120,180,360,720,1440,2880,4320,7200,10080,14400]'::jsonb,
+  horizons_minutes jsonb not null default '[15,30,60,120,180,480]'::jsonb,
+  windows_minutes jsonb not null default '[15,30,60,120,180,360,480,720,1440,2880,4320,7200,10080,14400]'::jsonb,
   min_entry_notional numeric not null default 500,
   samples_total integer not null default 0,
   samples_processed integer not null default 0,
@@ -467,7 +467,7 @@ create table if not exists binance_baseline_context_jobs (
   completed_at timestamptz,
   heartbeat_at timestamptz,
   prior_days integer not null default 10 check (prior_days = 10),
-  snapshot_offsets_minutes jsonb not null default '[14400,10080,7200,4320,2880,1440,720,360,180,60,0]'::jsonb,
+  snapshot_offsets_minutes jsonb not null default '[14400,10080,7200,4320,2880,1440,720,480,360,180,60,0]'::jsonb,
   continuation_horizons_minutes jsonb not null default '[15]'::jsonb,
   min_entry_notional numeric not null default 500,
   samples_total integer not null default 0,
@@ -523,7 +523,7 @@ create table if not exists binance_confirmation_jobs (
   id uuid primary key default gen_random_uuid(),
   baseline_context_job_id uuid not null references binance_baseline_context_jobs(id) on delete cascade,
   status text not null check (status in ('queued','running','completed','failed')),
-  protocol_version text not null default 'v6_h1_fresh_confirmation_1',
+  protocol_version text not null default 'v7_h1_8h_fresh_confirmation_1',
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
@@ -558,7 +558,7 @@ create table if not exists binance_backtest_jobs (
   id uuid primary key default gen_random_uuid(),
   confirmation_job_id uuid not null references binance_confirmation_jobs(id) on delete restrict,
   status text not null check (status in ('queued','running','completed','completed_with_warnings','failed')),
-  protocol_version text not null default 'v6_continuous_executable_backtest_1',
+  protocol_version text not null default 'v7_continuous_executable_backtest_1',
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
@@ -623,3 +623,34 @@ alter table binance_backtest_files enable row level security;
 alter table binance_backtest_issues enable row level security;
 
 -- No anonymous policies are created. The app uses the server-side secret/service-role key only.
+
+-- Binance eight-hour 50% surge research v6 -> v7
+-- Additive/default-only migration. Existing three-hour rows and files are preserved.
+
+alter table binance_scan_jobs
+  alter column event_definition_version set default 'v7_rolling_8h';
+alter table binance_scan_jobs
+  alter column window_minutes set default 480;
+
+alter table binance_gainer_events
+  alter column event_definition_version set default 'v7_rolling_8h';
+alter table binance_gainer_events
+  alter column window_minutes set default 480;
+
+alter table binance_matched_control_jobs
+  alter column horizons_minutes set default '[15,30,60,120,180,480]'::jsonb;
+alter table binance_matched_control_jobs
+  alter column contamination_after_minutes set default 480;
+
+alter table binance_context_jobs
+  alter column horizons_minutes set default '[15,30,60,120,180,480]'::jsonb;
+alter table binance_context_jobs
+  alter column windows_minutes set default '[15,30,60,120,180,360,480,720,1440,2880,4320,7200,10080,14400]'::jsonb;
+
+alter table binance_baseline_context_jobs
+  alter column snapshot_offsets_minutes set default '[14400,10080,7200,4320,2880,1440,720,480,360,180,60,0]'::jsonb;
+
+alter table binance_confirmation_jobs
+  alter column protocol_version set default 'v7_h1_8h_fresh_confirmation_1';
+alter table binance_backtest_jobs
+  alter column protocol_version set default 'v7_continuous_executable_backtest_1';

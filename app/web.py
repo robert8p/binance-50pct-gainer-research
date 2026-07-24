@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 3-Hour 50% Surge Research", version="6.0.0")
+app = FastAPI(title="Binance 8-Hour 50% Surge Research", version="7.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "6.0.0"}
+    return {"status": "ok", "version": "7.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -54,20 +54,32 @@ def dashboard(request: Request) -> HTMLResponse:
     baseline_context_files = db.select("binance_baseline_context_files", order="created_at.desc", limit=100)
     confirmation_files = db.select("binance_confirmation_files", order="created_at.desc", limit=100)
     backtest_files = db.select("binance_backtest_files", order="created_at.desc", limit=100)
-    completed_fresh_baseline_jobs = [
-        x for x in baseline_context_jobs
-        if x["status"] in {"completed", "completed_with_warnings"} and x.get("research_mode") == "fresh_staged"
-    ]
-    passed_confirmation_jobs = [
-        x for x in confirmation_jobs if x.get("status") == "completed" and bool(x.get("passed"))
-    ]
-    completed_matched_jobs = [
-        x for x in matched_jobs if x["status"] in {"completed", "completed_with_warnings"}
-    ]
     completed_scans = [
         x for x in scans
         if x["status"] in {"completed", "completed_with_warnings"}
-        and x.get("event_definition_version") == "v2_rolling_3h"
+        and x.get("event_definition_version") == "v7_rolling_8h"
+        and int(x.get("window_minutes") or 0) == 480
+    ]
+    v7_scan_ids = {str(x["id"]) for x in completed_scans}
+    completed_matched_jobs = [
+        x for x in matched_jobs
+        if x["status"] in {"completed", "completed_with_warnings"}
+        and str(x.get("scan_id")) in v7_scan_ids
+    ]
+    v7_matched_ids = {str(x["id"]) for x in completed_matched_jobs}
+    completed_fresh_baseline_jobs = [
+        x for x in baseline_context_jobs
+        if x["status"] in {"completed", "completed_with_warnings"}
+        and x.get("research_mode") == "fresh_staged"
+        and str(x.get("matched_control_job_id")) in v7_matched_ids
+    ]
+    v7_baseline_ids = {str(x["id"]) for x in completed_fresh_baseline_jobs}
+    passed_confirmation_jobs = [
+        x for x in confirmation_jobs
+        if x.get("status") == "completed"
+        and bool(x.get("passed"))
+        and x.get("protocol_version") == "v7_h1_8h_fresh_confirmation_1"
+        and str(x.get("baseline_context_job_id")) in v7_baseline_ids
     ]
     return templates.TemplateResponse(
         request,
@@ -132,10 +144,10 @@ def create_scan(
         {
             "id": str(uuid.uuid4()),
             "status": "queued",
-            "event_definition_version": "v2_rolling_3h",
+            "event_definition_version": "v7_rolling_8h",
             "lookback_days": lookback_days,
             "threshold_pct": threshold_pct,
-            "window_minutes": 180,
+            "window_minutes": 480,
             "quote_assets": quotes,
             "min_exit_notional": min_exit_notional,
             "confirmation_window_seconds": confirmation_window_seconds,
@@ -181,7 +193,7 @@ def create_matched_controls(
     scan_id: str = Form(...),
     controls_per_event: int = Form(5),
     prior_days: int = Form(10),
-    horizons_minutes: str = Form("15,30,60,120"),
+    horizons_minutes: str = Form("15,30,60,120,180,480"),
     min_entry_notional: float = Form(500),
 ) -> RedirectResponse:
     _auth(request)
@@ -193,10 +205,15 @@ def create_matched_controls(
         horizons = sorted({int(value.strip()) for value in horizons_minutes.split(",") if value.strip()})
     except ValueError as exc:
         raise HTTPException(400, "horizons_minutes must be comma-separated integers") from exc
-    if not horizons or any(value < 5 or value > 360 for value in horizons):
-        raise HTTPException(400, "decision horizons must be between 5 and 360 minutes")
+    if not horizons or any(value < 5 or value > 720 for value in horizons):
+        raise HTTPException(400, "decision horizons must be between 5 and 720 minutes")
+    if 480 not in horizons:
+        raise HTTPException(400, "V7 matched controls must include the 480-minute horizon")
     if min_entry_notional < 0:
         raise HTTPException(400, "min_entry_notional cannot be negative")
+    scan_rows = db.select("binance_scan_jobs", filters={"id": f"eq.{scan_id}"}, limit=1)
+    if not scan_rows or scan_rows[0].get("event_definition_version") != "v7_rolling_8h" or int(scan_rows[0].get("window_minutes") or 0) != 480:
+        raise HTTPException(400, "Select a completed V7 eight-hour scan")
     db.insert(
         "binance_matched_control_jobs",
         {
@@ -207,7 +224,7 @@ def create_matched_controls(
             "prior_days": prior_days,
             "horizons_minutes": horizons,
             "contamination_before_minutes": max(horizons),
-            "contamination_after_minutes": 180,
+            "contamination_after_minutes": 480,
             "min_entry_notional": min_entry_notional,
             "discovery_pct": 70,
             "validation_pct": 15,
@@ -221,7 +238,7 @@ def create_ten_day_context(
     request: Request,
     matched_control_job_id: str = Form(...),
     research_mode: str = Form("exploratory_reuse"),
-    horizons_minutes: str = Form("15,30,60,120"),
+    horizons_minutes: str = Form("15,30,60,120,180,480"),
     min_entry_notional: float = Form(500),
 ) -> RedirectResponse:
     _auth(request)
@@ -231,8 +248,8 @@ def create_ten_day_context(
         horizons = sorted({int(value.strip()) for value in horizons_minutes.split(",") if value.strip()})
     except ValueError as exc:
         raise HTTPException(400, "horizons_minutes must be comma-separated integers") from exc
-    if not horizons or any(value < 5 or value > 360 for value in horizons):
-        raise HTTPException(400, "decision horizons must be between 5 and 360 minutes")
+    if not horizons or any(value < 5 or value > 720 for value in horizons):
+        raise HTTPException(400, "decision horizons must be between 5 and 720 minutes")
     if min_entry_notional < 0:
         raise HTTPException(400, "min_entry_notional cannot be negative")
     db.insert(
@@ -244,7 +261,7 @@ def create_ten_day_context(
             "research_mode": research_mode,
             "prior_days": 10,
             "horizons_minutes": horizons,
-            "windows_minutes": [15,30,60,120,180,360,720,1440,2880,4320,7200,10080,14400],
+            "windows_minutes": [15,30,60,120,180,360,480,720,1440,2880,4320,7200,10080,14400],
             "min_entry_notional": min_entry_notional,
         },
     )
@@ -271,7 +288,7 @@ def create_baseline_context(
             "status": "queued",
             "research_mode": research_mode,
             "prior_days": 10,
-            "snapshot_offsets_minutes": [14400,10080,7200,4320,2880,1440,720,360,180,60,0],
+            "snapshot_offsets_minutes": [14400,10080,7200,4320,2880,1440,720,480,360,180,60,0],
             "continuation_horizons_minutes": [15],
             "min_entry_notional": min_entry_notional,
         },
@@ -294,13 +311,25 @@ def create_fresh_confirmation(
         raise HTTPException(400, "Select a completed baseline-context job")
     if rows[0].get("research_mode") != "fresh_staged":
         raise HTTPException(400, "Fresh confirmation requires a fresh_staged baseline-context job")
+    matched_rows = db.select(
+        "binance_matched_control_jobs",
+        filters={"id": f"eq.{rows[0]['matched_control_job_id']}"},
+        limit=1,
+    )
+    scan_rows = db.select(
+        "binance_scan_jobs",
+        filters={"id": f"eq.{matched_rows[0]['scan_id']}"},
+        limit=1,
+    ) if matched_rows else []
+    if not scan_rows or scan_rows[0].get("event_definition_version") != "v7_rolling_8h" or int(scan_rows[0].get("window_minutes") or 0) != 480:
+        raise HTTPException(400, "Fresh confirmation requires V7 eight-hour baseline context")
     db.insert(
         "binance_confirmation_jobs",
         {
             "id": str(uuid.uuid4()),
             "baseline_context_job_id": baseline_context_job_id,
             "status": "queued",
-            "protocol_version": "v6_h1_fresh_confirmation_1",
+            "protocol_version": "v7_h1_8h_fresh_confirmation_1",
         },
     )
     return RedirectResponse("/", status_code=303)
@@ -320,6 +349,8 @@ def create_continuous_backtest(
     )
     if not confirmation or confirmation[0].get("status") != "completed" or not bool(confirmation[0].get("passed")):
         raise HTTPException(400, "A completed passing fresh-confirmation job is required")
+    if confirmation[0].get("protocol_version") != "v7_h1_8h_fresh_confirmation_1":
+        raise HTTPException(400, "Select a passing V7 eight-hour confirmation job")
     try:
         start_day = date.fromisoformat(window_start_date)
         end_day = date.fromisoformat(window_end_date_exclusive)
@@ -334,7 +365,7 @@ def create_continuous_backtest(
             "id": str(uuid.uuid4()),
             "confirmation_job_id": confirmation_job_id,
             "status": "queued",
-            "protocol_version": "v6_continuous_executable_backtest_1",
+            "protocol_version": "v7_continuous_executable_backtest_1",
             "window_start_date": start_day.isoformat(),
             "window_end_date_exclusive": end_day.isoformat(),
             "quote_assets": quotes,
@@ -371,7 +402,7 @@ def events_csv(request: Request, scan_id: str) -> StreamingResponse:
         filters={"scan_id": f"eq.{scan_id}", "sellability_pass": "eq.true"},
         order="event_date.asc,symbol.asc",
     )
-    return _csv_response(rows, f"binance_saleable_3h_gainer_events_{scan_id}.csv")
+    return _csv_response(rows, f"binance_saleable_8h_gainer_events_{scan_id}.csv")
 
 
 @app.get("/exports/candidates/{scan_id}.csv")
@@ -381,7 +412,7 @@ def candidates_csv(request: Request, scan_id: str) -> StreamingResponse:
     rows = db.select_all(
         "binance_gainer_events", filters={"scan_id": f"eq.{scan_id}"}, order="event_date.asc,symbol.asc"
     )
-    return _csv_response(rows, f"binance_all_3h_gainer_candidates_{scan_id}.csv")
+    return _csv_response(rows, f"binance_all_8h_gainer_candidates_{scan_id}.csv")
 
 
 @app.get("/exports/decisions/{scan_id}.csv")
