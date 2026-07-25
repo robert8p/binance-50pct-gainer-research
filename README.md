@@ -1,88 +1,70 @@
-# Binance 8-hour 50% surge research — V8.0.0
+# Binance Momentum Continuation Backtest — V9.0.0
 
-V8 corrects the main control-design weakness identified in the exploratory eight-hour analysis.
+V9 performs the final OHLCV-only research test in this programme.
 
-## Research objective
+It does **not** try to predict the beginning of a 50% surge. H1, H2 and H3 are retired. Instead, V9 asks whether the previously frozen late-momentum condition can still produce a repeatable continuation profit when evaluated continuously across Binance Spot history.
 
-Find a repeatable, historically robust way to identify saleable Binance Spot coins before or during the early stages of a rise of at least 50% within eight hours.
+## Frozen signal
 
-A qualifying event must also prove at least 500 quote units of seller-initiated executed notional within five minutes after the exact crossing trade.
+After every completed one-minute bar, the coin signals when recent five-minute quote volume is at least 500 quote units and at least three of these four conditions pass:
 
-## What V8 changes
+1. 15-minute return is at least 0.9%.
+2. 15-minute quote volume is at least 12 times its median at the same UTC time over the preceding seven days, with at least five reference days.
+3. Price is at least 74% of the way from its 24-hour low to its 24-hour high.
+4. Maximum low-to-later-high run-up during the latest 15 minutes is at least 3.3%.
 
-The event scanner itself is unchanged: it uses the latest occurrence of the lowest one-minute low in the prior 479 completed minutes and identifies a later high at least 50% above that low.
+## Frozen historical test
 
-V8 fresh confirmation now selects non-event controls using the **same algorithm**:
+- Window: 1 July 2025 to 1 November 2025, end exclusive
+- Canonical pair preference: USDT, then USDC, then FDUSD
+- Current-tradeable Binance Spot universe
+- Position: 500 quote units
+- Entry: aggregate buyer-initiated executions beginning after the completed signal minute
+- Entry fill window: 60 seconds
+- Take profit: +10%
+- Stop loss: -5%
+- Maximum hold: three hours
+- Exit: seller-initiated aggregate executions
+- Exit fill window: five minutes
+- Fees: 0.10% per side
+- Same-coin cooldown: three hours after exit or failed execution
+- Maximum filled entries: five per UTC day
 
-1. Choose a matched pseudo-cross minute for the same coin and chronological split.
-2. Select the latest occurrence of the minimum low in the preceding 479 completed minutes.
-3. Require the selected baseline to fall in the same event-duration band.
-4. Reject the control if that low rises 50% or more during the following eight-hour window.
-5. Require ten complete days of history and at least 500 quote units of five-minute pre-baseline liquidity.
+All parameters and dates are fixed in code and in `docs/V9_PREREGISTERED_PROTOCOL.json`.
 
-This removes the earlier asymmetry where event baselines were retrospectively selected lows but control baselines were ordinary timestamps.
+## Graduation standard
 
-## Frozen precursor
+V9 passes only if every frozen condition passes, including:
 
-V8 tests only the unchanged H3 volatility-reversal rule:
+- at least 100 completed trades and 20 coins;
+- positive net P&L;
+- at least 1 quote unit of average net profit per trade;
+- profit factor of at least 1.25;
+- maximum drawdown no greater than 1,500 quote units on a simulated 10,000-unit starting equity;
+- no more than ten consecutive losses;
+- no coin contributing more than 15% of trades;
+- at least 20 trades and positive expectancy in each chronological third;
+- positive lower bound of the 95% coin-cluster bootstrap interval for expectancy;
+- at least 95% mean minute-archive coverage;
+- signal-generation failure rate no higher than 5% of the universe.
 
-- `volatility_1d_to_7d_ratio >= 0.4`
-- `ret_prior_1d_to_7d_pct <= 5`
+A pass permits a separate implementation and robustness review. It does not initiate live trading. A fail retires this OHLCV-only Binance surge programme without retuning.
 
-No threshold can be edited from the dashboard.
+## Output package
 
-## Fresh confirmation period
+`continuous_backtest_results.zip` contains:
 
-Use an explicit eight-hour historical scan covering:
+- `backtest_results.json`
+- `backtest_protocol.json`
+- `candidate_signals.csv`
+- `executed_trades.csv`
+- `performance_by_chronological_third.csv`
+- `performance_by_month.csv`
+- `performance_by_symbol.csv`
+- `daily_performance.csv`
+- `minute_data_coverage.csv`
+- `aggregate_trade_coverage.csv`
 
-- Start inclusive: `2025-11-01`
-- End exclusive: `2026-01-01`
+## Material limitation
 
-This period predates the opened May–July eight-hour exploratory sample.
-
-## Preregistered acceptance
-
-H3 passes only if all checks succeed:
-
-- at least 25 evaluable events;
-- event signal rate at least 30%;
-- control signal rate no higher than 30%;
-- event/control rate ratio at least 1.5;
-- matched randomisation p-value no higher than 0.05;
-- at least eight distinct event symbols hit;
-- symbol-cluster bootstrap rate-ratio lower bound above 1;
-- positive direction in both validation and sealed chronological segments;
-- positive direction in at least two duration bands containing at least five events.
-
-A failed result keeps the continuous backtest locked.
-
-## Continuous backtest after a pass
-
-The frozen sequence is:
-
-1. H3 becomes true on a rising edge and arms the coin for eight hours.
-2. The unchanged late-momentum trigger must occur during that arm window.
-3. Enter using buyer-initiated aggregate trades after the completed trigger minute.
-4. Prove a 500-quote-unit fill.
-5. Exit at +15%, −5%, or after three hours, using seller-initiated aggregate trades.
-6. Apply 0.10% fees on each side, a three-hour symbol cooldown and a maximum of five filled entries per UTC day.
-
-The eight-hour target window and three-hour maximum trade hold are deliberately separate.
-
-## Deployment
-
-Existing installations should run:
-
-```text
-supabase/migrate_v7_to_v8.sql
-```
-
-Then upload the V8 files to the existing GitHub repository and wait for both Render services to redeploy.
-
-Health check:
-
-```json
-{"status":"ok","version":"8.0.0"}
-```
-
-See `WINDOWS_UPDATE.md` for the simplest upgrade and run sequence.
+The historical universe begins with coins tradeable on Binance when V9 is run. Historically delisted coins are absent, so survivorship bias remains. The result must be interpreted with that limitation even if every formal criterion passes.

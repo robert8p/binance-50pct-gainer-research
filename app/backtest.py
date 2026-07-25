@@ -16,44 +16,61 @@ import pandas as pd
 
 from .binance import BinanceClient, archive_url, download_archive, normalize_archive_timestamp, sha256_file
 from .classifier import classify_symbol
-from .matched_controls import MinuteArchiveCache
+from .matched_controls import LoadedSymbol, read_kline_archive, rest_rows_to_frame
 from .supabase import SupabaseClient
 
 BACKTEST_PROTOCOL: dict[str, Any] = {
-    "version": "v8_h3_continuous_executable_backtest_1",
-    "context_rule": {
-        "id": "H3_VOLATILITY_REVERSAL",
-        "volatility_1d_to_7d_ratio_min": 0.4,
-        "ret_prior_1d_to_7d_pct_max": 5.0,
-        "rising_edge_only": True,
-    },
-    "continuation_rule": {
-        "arm_window_minutes": 480,
+    "version": "v9_momentum_only_continuous_backtest_1",
+    "signal_rule": {
+        "id": "FROZEN_LATE_MOMENTUM_3_OF_4",
         "minimum_components": 3,
         "ret_15m_pct_min": 0.9,
         "quote_volume_15m_vs_prior_7d_same_time_min": 12.0,
+        "minimum_same_time_reference_days": 5,
         "position_in_1440m_range_min": 0.74,
         "max_runup_15m_pct_min": 3.3,
         "prior_5m_quote_volume_min": 500.0,
+        "evaluation": "after every completed one-minute bar",
     },
     "execution": {
         "position_quote_notional": 500.0,
         "entry_fill_window_seconds": 60,
-        "take_profit_pct": 15.0,
+        "take_profit_pct": 10.0,
         "stop_loss_pct": 5.0,
         "maximum_hold_minutes": 180,
         "exit_fill_window_seconds": 300,
         "fee_bps_each_side": 10.0,
         "symbol_cooldown_minutes_after_exit_or_failure": 180,
         "maximum_filled_entries_per_utc_day": 5,
+        "simulated_starting_equity_quote": 10_000.0,
+        "same_timestamp_ranking": [
+            "late_components_passed descending",
+            "quote_volume_15m_vs_prior_7d_same_time descending",
+            "symbol ascending",
+        ],
+    },
+    "graduation_criteria": {
+        "minimum_completed_trades": 100,
+        "minimum_unique_symbols": 20,
+        "minimum_total_net_pnl_quote_exclusive": 0.0,
+        "minimum_expectancy_quote": 1.0,
+        "minimum_profit_factor": 1.25,
+        "maximum_drawdown_quote": 1500.0,
+        "maximum_consecutive_losses": 10,
+        "maximum_largest_symbol_trade_share": 0.15,
+        "minimum_trades_each_chronological_third": 20,
+        "require_positive_expectancy_each_chronological_third": True,
+        "require_symbol_cluster_bootstrap_95pct_lower_expectancy_above_zero": True,
+        "minimum_minute_archive_mean_coverage": 0.95,
+        "maximum_symbol_failure_fraction": 0.05,
     },
     "integrity": {
         "parameters_tunable_after_run": False,
-        "entry_time": "first aggregate trade after the completed continuation-signal minute",
+        "entry_time": "first aggregate trade after the completed signal minute",
         "fill_proxy": "buyer-initiated executions for entry; seller-initiated executions for exit",
-        "target_event_window_minutes": 480,
         "maximum_trade_hold_minutes": 180,
-        "current_universe_warning": "Uses coins tradeable at run time; historical delisted coins are absent.",
+        "current_universe_warning": "Uses coins tradeable at run time; historically delisted coins are absent.",
+        "programme_decision": "PASS permits further robustness review; FAIL retires this OHLCV-only Binance surge programme.",
     },
 }
 
@@ -109,6 +126,192 @@ def _read_agg_archive(path: Path, symbol: str) -> pd.DataFrame:
     raw["symbol"] = symbol
     raw = raw.dropna(subset=["price", "quantity", "time"]).sort_values(["time", "agg_trade_id"])
     return raw[["symbol", "agg_trade_id", "price", "quantity", "time", "is_buyer_maker"]]
+
+
+class BacktestMinuteArchiveCache:
+    """Use monthly Binance archives for complete months and daily archives for partial months."""
+
+    def __init__(self, binance: BinanceClient, root: Path):
+        self.binance = binance
+        self.root = root / "backtest-minute-cache"
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _next_month(day: date) -> date:
+        return date(day.year + (day.month == 12), 1 if day.month == 12 else day.month + 1, 1)
+
+    def _folder(self, symbol: str) -> Path:
+        folder = self.root / symbol
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def _load_daily(self, symbol: str, day: date) -> tuple[pd.DataFrame, dict[str, Any]]:
+        folder = self._folder(symbol)
+        stem = f"{symbol}-1m-{day.isoformat()}"
+        archive_path = folder / f"{stem}.zip"
+        fallback_path = folder / f"{stem}.parquet"
+        missing_path = folder / f"{stem}.missing"
+        url = archive_url("klines", symbol, day, "1m")
+        frame = pd.DataFrame()
+        source = ""
+        status = "unavailable"
+        try:
+            if archive_path.exists() and zipfile.is_zipfile(archive_path):
+                frame = read_kline_archive(archive_path, symbol)
+                source = "official_daily_archive_cache"
+                status = "available"
+            elif fallback_path.exists():
+                frame = pd.read_parquet(fallback_path)
+                frame["open_time"] = pd.to_datetime(frame["open_time"], utc=True)
+                frame["close_time"] = pd.to_datetime(frame["close_time"], utc=True)
+                source = "rest_fallback_cache"
+                status = "available"
+            elif missing_path.exists():
+                source = "missing_marker"
+            else:
+                available = download_archive(url, archive_path)
+                if available:
+                    frame = read_kline_archive(archive_path, symbol)
+                    source = "official_daily_archive"
+                    status = "available"
+                else:
+                    start_ms = int(datetime.combine(day, time.min, tzinfo=timezone.utc).timestamp() * 1000)
+                    rows = self.binance.klines(symbol, "1m", start_ms, start_ms + 86_400_000)
+                    frame = rest_rows_to_frame(rows, symbol)
+                    if frame.empty:
+                        missing_path.write_text("No archive or REST rows", encoding="utf-8")
+                        source = "archive_and_rest_unavailable"
+                    else:
+                        frame.to_parquet(fallback_path, index=False, compression="zstd")
+                        source = "public_rest_fallback"
+                        status = "available"
+            checksum_path = archive_path if archive_path.exists() else fallback_path
+            manifest = {
+                "symbol": symbol,
+                "period": day.isoformat(),
+                "granularity": "daily",
+                "days_covered": 1,
+                "status": status,
+                "source": source,
+                "source_url": url,
+                "row_count": int(len(frame)),
+                "sha256": sha256_file(checksum_path) if checksum_path.exists() else None,
+            }
+            return frame, manifest
+        except Exception as exc:
+            return pd.DataFrame(), {
+                "symbol": symbol,
+                "period": day.isoformat(),
+                "granularity": "daily",
+                "days_covered": 1,
+                "status": "error",
+                "source": source or "unknown",
+                "source_url": url,
+                "row_count": 0,
+                "error": str(exc)[:1000],
+            }
+
+    def _load_monthly(self, symbol: str, month_start: date) -> tuple[pd.DataFrame, dict[str, Any]]:
+        folder = self._folder(symbol)
+        month = month_start.strftime("%Y-%m")
+        stem = f"{symbol}-1m-{month}"
+        archive_path = folder / f"{stem}.zip"
+        missing_path = folder / f"{stem}.missing"
+        url = (
+            f"https://data.binance.vision/data/spot/monthly/klines/{symbol}/1m/"
+            f"{symbol}-1m-{month}.zip"
+        )
+        next_month = self._next_month(month_start)
+        days_covered = (next_month - month_start).days
+        source = ""
+        try:
+            if archive_path.exists() and zipfile.is_zipfile(archive_path):
+                frame = read_kline_archive(archive_path, symbol)
+                source = "official_monthly_archive_cache"
+                status = "available"
+            elif missing_path.exists():
+                return pd.DataFrame(), {
+                    "symbol": symbol, "period": month, "granularity": "monthly",
+                    "days_covered": days_covered, "status": "unavailable",
+                    "source": "missing_marker", "source_url": url, "row_count": 0,
+                }
+            else:
+                available = download_archive(url, archive_path)
+                if not available:
+                    missing_path.write_text("Monthly archive unavailable", encoding="utf-8")
+                    return pd.DataFrame(), {
+                        "symbol": symbol, "period": month, "granularity": "monthly",
+                        "days_covered": days_covered, "status": "unavailable",
+                        "source": "archive_unavailable", "source_url": url, "row_count": 0,
+                    }
+                frame = read_kline_archive(archive_path, symbol)
+                source = "official_monthly_archive"
+                status = "available"
+            return frame, {
+                "symbol": symbol,
+                "period": month,
+                "granularity": "monthly",
+                "days_covered": days_covered,
+                "status": status,
+                "source": source,
+                "source_url": url,
+                "row_count": int(len(frame)),
+                "sha256": sha256_file(archive_path),
+            }
+        except Exception as exc:
+            return pd.DataFrame(), {
+                "symbol": symbol, "period": month, "granularity": "monthly",
+                "days_covered": days_covered, "status": "error", "source": source or "unknown",
+                "source_url": url, "row_count": 0, "error": str(exc)[:1000],
+            }
+
+    def load_symbol(self, symbol: str, start_day: date, end_day_exclusive: date) -> LoadedSymbol:
+        frames: list[pd.DataFrame] = []
+        manifest: list[dict[str, Any]] = []
+        cursor = start_day
+        while cursor < end_day_exclusive:
+            month_start = date(cursor.year, cursor.month, 1)
+            next_month = self._next_month(month_start)
+            segment_end = min(next_month, end_day_exclusive)
+            full_month = cursor == month_start and segment_end == next_month
+            if full_month:
+                frame, item = self._load_monthly(symbol, month_start)
+                if item.get("status") == "available":
+                    if not frame.empty:
+                        frames.append(frame)
+                    manifest.append(item)
+                else:
+                    # Monthly files can be absent for newly listed symbols; fall back day by day.
+                    day = cursor
+                    while day < segment_end:
+                        daily, daily_item = self._load_daily(symbol, day)
+                        if not daily.empty:
+                            frames.append(daily)
+                        manifest.append(daily_item)
+                        day += timedelta(days=1)
+                cursor = segment_end
+                continue
+            daily, item = self._load_daily(symbol, cursor)
+            if not daily.empty:
+                frames.append(daily)
+            manifest.append(item)
+            cursor += timedelta(days=1)
+
+        start_ts = pd.Timestamp(datetime.combine(start_day, time.min, tzinfo=timezone.utc))
+        end_ts = pd.Timestamp(datetime.combine(end_day_exclusive, time.min, tzinfo=timezone.utc))
+        index = pd.date_range(start_ts, end_ts - pd.Timedelta(minutes=1), freq="1min", tz="UTC")
+        if frames:
+            combined = pd.concat(frames, ignore_index=True)
+            combined = combined.sort_values("open_time").drop_duplicates("open_time", keep="last")
+            combined = combined.set_index("open_time").reindex(index)
+        else:
+            combined = pd.DataFrame(index=index)
+        for column in ["open", "high", "low", "close", "volume", "quote_volume", "trade_count", "taker_buy_base_volume", "taker_buy_quote_volume"]:
+            if column not in combined:
+                combined[column] = np.nan
+        combined["observed"] = combined["close"].notna()
+        combined.index.name = "open_time"
+        return LoadedSymbol(combined, manifest)
 
 
 class AggTradeArchiveCache:
@@ -191,27 +394,14 @@ def _rolling_runup(values: np.ndarray) -> float:
 
 
 def compute_signal_frame(frame: pd.DataFrame, start: datetime, end_exclusive: datetime) -> pd.DataFrame:
-    """Vectorised, look-ahead-safe implementation of the frozen V8 two-stage signal."""
+    """Vectorised, look-ahead-safe implementation of the frozen V9 momentum signal."""
     close = pd.to_numeric(frame["close"], errors="coerce")
     high = pd.to_numeric(frame["high"], errors="coerce")
     low = pd.to_numeric(frame["low"], errors="coerce")
     quote = pd.to_numeric(frame["quote_volume"], errors="coerce")
     observed = frame["observed"].fillna(False).astype(bool)
 
-    # H3 uses exactly the same definitions as the baseline-context engine.
-    log_returns = np.log(close.where(close > 0)).diff()
-    rv_1d = log_returns.rolling(1439, min_periods=1152).std(ddof=1) * math.sqrt(1440) * 100.0
-    rv_7d = log_returns.rolling(10079, min_periods=8064).std(ddof=1) * math.sqrt(10080) * 100.0
-    volatility_ratio = rv_1d / rv_7d.replace(0, np.nan)
-    prior_week = (close.shift(1440) / close.shift(10080) - 1.0) * 100.0
-    completeness_10d = observed.rolling(14400, min_periods=14400).mean()
-    h3 = (
-        (volatility_ratio >= 0.4)
-        & (prior_week <= 5.0)
-        & (completeness_10d >= 0.995)
-    ).fillna(False)
-    h3_rising = h3 & ~h3.shift(1, fill_value=False)
-
+    cfg = BACKTEST_PROTOCOL["signal_rule"]
     ret_15 = (close / close.shift(15) - 1.0) * 100.0
     volume_15 = quote.rolling(15, min_periods=15).sum()
     historical_same_time = pd.concat([volume_15.shift(1440 * day) for day in range(1, 8)], axis=1)
@@ -225,64 +415,60 @@ def compute_signal_frame(frame: pd.DataFrame, start: datetime, end_exclusive: da
     liquidity_5 = quote.rolling(5, min_periods=5).sum()
 
     components = pd.DataFrame({
-        "late_return": ret_15 >= 0.9,
-        "late_volume": (volume_15_ratio >= 12.0) & (same_time_count >= 5),
-        "late_range_position": range_position >= 0.74,
-        "late_runup": runup_15 >= 3.3,
+        "late_return": ret_15 >= float(cfg["ret_15m_pct_min"]),
+        "late_volume": (
+            (volume_15_ratio >= float(cfg["quote_volume_15m_vs_prior_7d_same_time_min"]))
+            & (same_time_count >= int(cfg["minimum_same_time_reference_days"]))
+        ),
+        "late_range_position": range_position >= float(cfg["position_in_1440m_range_min"]),
+        "late_runup": runup_15 >= float(cfg["max_runup_15m_pct_min"]),
     }).fillna(False)
     component_count = components.sum(axis=1)
-    late = ((component_count >= 3) & (liquidity_5 >= 500.0) & observed).fillna(False)
+    late = (
+        (component_count >= int(cfg["minimum_components"]))
+        & (liquidity_5 >= float(cfg["prior_5m_quote_volume_min"]))
+        & observed
+    ).fillna(False)
 
     result = pd.DataFrame(index=frame.index)
-    result["h3"] = h3
-    result["h3_rising"] = h3_rising
-    result["ret_prior_1d_to_7d_pct"] = prior_week
-    result["realized_vol_1440m_pct"] = rv_1d
-    result["realized_vol_10080m_pct"] = rv_7d
-    result["volatility_1d_to_7d_ratio"] = volatility_ratio
     result["late_trigger"] = late
     result["late_components_passed"] = component_count
     result["ret_15m_pct"] = ret_15
     result["quote_volume_15m_vs_prior_7d_same_time"] = volume_15_ratio
+    result["same_time_reference_days"] = same_time_count
     result["position_in_1440m_range"] = range_position
     result["max_runup_15m_pct"] = runup_15
     result["entry_quote_volume_5m"] = liquidity_5
     result["signal_close"] = close
+    result["component_return_pass"] = components["late_return"]
+    result["component_volume_pass"] = components["late_volume"]
+    result["component_range_pass"] = components["late_range_position"]
+    result["component_runup_pass"] = components["late_runup"]
     mask = (result.index >= pd.Timestamp(start)) & (result.index < pd.Timestamp(end_exclusive))
     return result.loc[mask].copy()
 
 
-def candidate_signals(symbol: str, signal_frame: pd.DataFrame, arm_minutes: int = 480) -> list[dict[str, Any]]:
+def candidate_signals(symbol: str, signal_frame: pd.DataFrame) -> list[dict[str, Any]]:
+    """Return every completed-minute momentum trigger; portfolio rules suppress duplicates later."""
     candidates: list[dict[str, Any]] = []
-    next_arm_allowed: pd.Timestamp | None = None
-    rising_times = signal_frame.index[signal_frame["h3_rising"].fillna(False)]
-    for arm_bar in rising_times:
-        if next_arm_allowed is not None and arm_bar < next_arm_allowed:
-            continue
-        window = signal_frame.loc[arm_bar : arm_bar + pd.Timedelta(minutes=arm_minutes - 1)]
-        late_rows = window[window["late_trigger"].fillna(False)]
-        next_arm_allowed = arm_bar + pd.Timedelta(minutes=arm_minutes)
-        if late_rows.empty:
-            continue
-        signal_bar = late_rows.index[0]
-        row = late_rows.iloc[0]
+    late_rows = signal_frame[signal_frame["late_trigger"].fillna(False)]
+    for signal_bar, row in late_rows.iterrows():
         candidates.append({
             "symbol": symbol,
-            "h3_arm_bar_open": arm_bar.isoformat(),
             "signal_bar_open": signal_bar.isoformat(),
             "signal_decision_time": (signal_bar + pd.Timedelta(minutes=1)).isoformat(),
-            "arm_to_signal_minutes": int((signal_bar - arm_bar).total_seconds() // 60),
             "signal_close": float(row["signal_close"]),
             "late_components_passed": int(row["late_components_passed"]),
-            "ret_prior_1d_to_7d_pct": float(row["ret_prior_1d_to_7d_pct"]),
-            "realized_vol_1440m_pct": float(row["realized_vol_1440m_pct"]),
-            "realized_vol_10080m_pct": float(row["realized_vol_10080m_pct"]),
-            "volatility_1d_to_7d_ratio": float(row["volatility_1d_to_7d_ratio"]),
             "ret_15m_pct": float(row["ret_15m_pct"]),
             "quote_volume_15m_vs_prior_7d_same_time": float(row["quote_volume_15m_vs_prior_7d_same_time"]),
+            "same_time_reference_days": int(row["same_time_reference_days"]),
             "position_in_1440m_range": float(row["position_in_1440m_range"]),
             "max_runup_15m_pct": float(row["max_runup_15m_pct"]),
             "entry_quote_volume_5m": float(row["entry_quote_volume_5m"]),
+            "component_return_pass": bool(row["component_return_pass"]),
+            "component_volume_pass": bool(row["component_volume_pass"]),
+            "component_range_pass": bool(row["component_range_pass"]),
+            "component_runup_pass": bool(row["component_runup_pass"]),
         })
     return candidates
 
@@ -397,6 +583,14 @@ def simulate_execution(candidate: dict[str, Any], trades: pd.DataFrame) -> dict[
             "exit_trigger_price": trigger_price,
         }
 
+    realised_path = trades[(trades["time"] > pd.Timestamp(entry_fill_time)) & (trades["time"] <= pd.Timestamp(trigger_time))]
+    path_prices = pd.to_numeric(realised_path.get("price", pd.Series(dtype=float)), errors="coerce").dropna()
+    maximum_favourable_excursion_pct = (
+        float((path_prices.max() / entry_vwap - 1.0) * 100.0) if not path_prices.empty else 0.0
+    )
+    maximum_adverse_excursion_pct = (
+        float((path_prices.min() / entry_vwap - 1.0) * 100.0) if not path_prices.empty else 0.0
+    )
     exit_quote = float(exit_fill["quote_notional"])
     fee_rate = float(cfg["fee_bps_each_side"]) / 10_000.0
     entry_cost = float(cfg["position_quote_notional"]) * (1.0 + fee_rate)
@@ -418,7 +612,14 @@ def simulate_execution(candidate: dict[str, Any], trades: pd.DataFrame) -> dict[
         "exit_trigger_time": trigger_time.isoformat(),
         "exit_trigger_price": trigger_price,
         "exit_vwap": float(exit_fill["vwap"]),
+        "exit_trigger_to_vwap_slippage_pct": (
+            (float(exit_fill["vwap"]) / float(trigger_price) - 1.0) * 100.0
+            if trigger_price not in (None, 0) else None
+        ),
         "exit_fill_completed_at": exit_fill["fill_completed_at"],
+        "holding_minutes_to_trigger": (trigger_time - entry_fill_time).total_seconds() / 60.0,
+        "maximum_favourable_excursion_pct": maximum_favourable_excursion_pct,
+        "maximum_adverse_excursion_pct": maximum_adverse_excursion_pct,
         "exit_trades_used": exit_fill["trades_used"],
         "gross_return_pct": gross_return,
         "net_return_pct": net_return,
@@ -427,8 +628,7 @@ def simulate_execution(candidate: dict[str, Any], trades: pd.DataFrame) -> dict[
     }
 
 
-def _performance(trades: pd.DataFrame, start: date, end_exclusive: date) -> dict[str, Any]:
-    completed = trades[trades["execution_status"] == "completed"].copy() if not trades.empty else pd.DataFrame()
+def _basic_performance(completed: pd.DataFrame, starting_equity: float) -> dict[str, Any]:
     if completed.empty:
         return {
             "completed_trades": 0,
@@ -439,8 +639,9 @@ def _performance(trades: pd.DataFrame, start: date, end_exclusive: date) -> dict
             "maximum_drawdown_quote": None,
             "maximum_consecutive_losses": 0,
         }
+    completed = completed.sort_values("entry_fill_completed_at").copy()
     pnl = pd.to_numeric(completed["net_pnl_quote"], errors="coerce").fillna(0.0)
-    equity = 10_000.0 + pnl.cumsum()
+    equity = float(starting_equity) + pnl.cumsum()
     drawdown = equity - equity.cummax()
     wins = pnl > 0
     gross_profit = float(pnl[pnl > 0].sum())
@@ -454,7 +655,6 @@ def _performance(trades: pd.DataFrame, start: date, end_exclusive: date) -> dict
             current += 1
             max_losses = max(max_losses, current)
     symbol_counts = completed["symbol"].value_counts()
-    span_days = max(1, (end_exclusive - start).days)
     return {
         "completed_trades": int(len(completed)),
         "winning_trades": int(wins.sum()),
@@ -466,12 +666,123 @@ def _performance(trades: pd.DataFrame, start: date, end_exclusive: date) -> dict
         "total_net_pnl_quote": float(pnl.sum()),
         "profit_factor": gross_profit / gross_loss if gross_loss > 0 else math.inf,
         "maximum_drawdown_quote": float(drawdown.min()),
-        "maximum_drawdown_pct_of_10000": float(drawdown.min() / 10_000.0 * 100.0),
+        "maximum_drawdown_pct_of_starting_equity": float(drawdown.min() / starting_equity * 100.0),
         "maximum_consecutive_losses": int(max_losses),
-        "trades_per_calendar_day": float(len(completed) / span_days),
         "unique_symbols_traded": int(completed["symbol"].nunique()),
         "largest_symbol_trade_share": float(symbol_counts.iloc[0] / len(completed)) if len(symbol_counts) else None,
         "exit_reason_counts": completed["exit_reason"].value_counts().to_dict(),
+    }
+
+
+def _symbol_cluster_bootstrap_expectancy(completed: pd.DataFrame, iterations: int = 10_000) -> dict[str, Any]:
+    if completed.empty or completed["symbol"].nunique() < 2:
+        return {"iterations": 0, "lower_95": None, "median": None, "upper_95": None}
+    grouped = {
+        str(symbol): pd.to_numeric(group["net_pnl_quote"], errors="coerce").dropna().to_numpy(dtype=float)
+        for symbol, group in completed.groupby("symbol")
+    }
+    symbols = sorted(grouped)
+    rng = np.random.default_rng(20260725)
+    means = np.empty(iterations, dtype=float)
+    for idx in range(iterations):
+        sampled = rng.choice(symbols, size=len(symbols), replace=True)
+        values = np.concatenate([grouped[str(symbol)] for symbol in sampled])
+        means[idx] = float(values.mean()) if len(values) else np.nan
+    finite = means[np.isfinite(means)]
+    if not len(finite):
+        return {"iterations": 0, "lower_95": None, "median": None, "upper_95": None}
+    return {
+        "iterations": int(len(finite)),
+        "lower_95": float(np.quantile(finite, 0.025)),
+        "median": float(np.quantile(finite, 0.5)),
+        "upper_95": float(np.quantile(finite, 0.975)),
+    }
+
+
+def _performance(trades: pd.DataFrame, start: date, end_exclusive: date) -> dict[str, Any]:
+    cfg = BACKTEST_PROTOCOL["execution"]
+    starting_equity = float(cfg["simulated_starting_equity_quote"])
+    completed = trades[trades["execution_status"] == "completed"].copy() if not trades.empty else pd.DataFrame()
+    overall = _basic_performance(completed, starting_equity)
+    span_days = max(1, (end_exclusive - start).days)
+    overall["trades_per_calendar_day"] = float(len(completed) / span_days)
+    if completed.empty:
+        return {"overall": overall, "chronological_thirds": [], "monthly": [], "by_symbol": [], "daily": [], "symbol_cluster_bootstrap_expectancy": _symbol_cluster_bootstrap_expectancy(completed)}
+
+    completed["entry_time"] = pd.to_datetime(completed["entry_fill_completed_at"], utc=True)
+    total_seconds = (datetime.combine(end_exclusive, time.min, tzinfo=timezone.utc) - datetime.combine(start, time.min, tzinfo=timezone.utc)).total_seconds()
+    boundaries = [
+        datetime.combine(start, time.min, tzinfo=timezone.utc) + timedelta(seconds=total_seconds * i / 3)
+        for i in range(4)
+    ]
+    thirds: list[dict[str, Any]] = []
+    for i in range(3):
+        subset = completed[(completed["entry_time"] >= boundaries[i]) & (completed["entry_time"] < boundaries[i + 1])]
+        metrics = _basic_performance(subset, starting_equity)
+        metrics.update({"segment": i + 1, "start": boundaries[i].isoformat(), "end_exclusive": boundaries[i + 1].isoformat()})
+        thirds.append(metrics)
+
+    monthly: list[dict[str, Any]] = []
+    completed["month"] = completed["entry_time"].dt.strftime("%Y-%m")
+    for month, subset in completed.groupby("month", sort=True):
+        metrics = _basic_performance(subset, starting_equity)
+        metrics["month"] = month
+        monthly.append(metrics)
+
+    by_symbol: list[dict[str, Any]] = []
+    for symbol, subset in completed.groupby("symbol"):
+        metrics = _basic_performance(subset, starting_equity)
+        metrics["symbol"] = str(symbol)
+        by_symbol.append(metrics)
+    by_symbol.sort(key=lambda row: (-int(row["completed_trades"]), str(row["symbol"])))
+
+    completed["entry_day"] = completed["entry_time"].dt.date.astype(str)
+    daily = []
+    for day, subset in completed.groupby("entry_day", sort=True):
+        pnl = pd.to_numeric(subset["net_pnl_quote"], errors="coerce").fillna(0.0)
+        daily.append({
+            "date": day,
+            "completed_trades": int(len(subset)),
+            "net_pnl_quote": float(pnl.sum()),
+            "winning_trades": int((pnl > 0).sum()),
+            "losing_trades": int((pnl <= 0).sum()),
+        })
+    return {
+        "overall": overall,
+        "chronological_thirds": thirds,
+        "monthly": monthly,
+        "by_symbol": by_symbol,
+        "daily": daily,
+        "symbol_cluster_bootstrap_expectancy": _symbol_cluster_bootstrap_expectancy(completed),
+    }
+
+
+def _graduation_decision(performance: dict[str, Any], quality: dict[str, Any]) -> dict[str, Any]:
+    criteria = BACKTEST_PROTOCOL["graduation_criteria"]
+    overall = performance["overall"]
+    thirds = performance["chronological_thirds"]
+    bootstrap = performance["symbol_cluster_bootstrap_expectancy"]
+    pf = overall.get("profit_factor")
+    checks = {
+        "minimum_completed_trades": int(overall.get("completed_trades") or 0) >= int(criteria["minimum_completed_trades"]),
+        "minimum_unique_symbols": int(overall.get("unique_symbols_traded") or 0) >= int(criteria["minimum_unique_symbols"]),
+        "positive_total_net_pnl": float(overall.get("total_net_pnl_quote") or 0.0) > float(criteria["minimum_total_net_pnl_quote_exclusive"]),
+        "minimum_expectancy": overall.get("expectancy_quote") is not None and float(overall["expectancy_quote"]) >= float(criteria["minimum_expectancy_quote"]),
+        "minimum_profit_factor": pf is not None and float(pf) >= float(criteria["minimum_profit_factor"]),
+        "maximum_drawdown": overall.get("maximum_drawdown_quote") is not None and abs(float(overall["maximum_drawdown_quote"])) <= float(criteria["maximum_drawdown_quote"]),
+        "maximum_consecutive_losses": int(overall.get("maximum_consecutive_losses") or 0) <= int(criteria["maximum_consecutive_losses"]),
+        "maximum_symbol_concentration": overall.get("largest_symbol_trade_share") is not None and float(overall["largest_symbol_trade_share"]) <= float(criteria["maximum_largest_symbol_trade_share"]),
+        "minimum_trades_each_third": len(thirds) == 3 and all(int(row.get("completed_trades") or 0) >= int(criteria["minimum_trades_each_chronological_third"]) for row in thirds),
+        "positive_expectancy_each_third": len(thirds) == 3 and all(row.get("expectancy_quote") is not None and float(row["expectancy_quote"]) > 0 for row in thirds),
+        "bootstrap_lower_expectancy_above_zero": bootstrap.get("lower_95") is not None and float(bootstrap["lower_95"]) > 0,
+        "minimum_minute_archive_coverage": quality.get("minute_archive_mean_coverage") is not None and float(quality["minute_archive_mean_coverage"]) >= float(criteria["minimum_minute_archive_mean_coverage"]),
+        "maximum_symbol_failure_fraction": float(quality.get("symbol_failure_fraction") or 0.0) <= float(criteria["maximum_symbol_failure_fraction"]),
+    }
+    return {
+        "passed": all(checks.values()),
+        "decision": "PASS" if all(checks.values()) else "FAIL",
+        "checks": checks,
+        "failed_checks": [name for name, passed in checks.items() if not passed],
     }
 
 
@@ -480,7 +791,7 @@ class ContinuousBacktestBuilder:
         self.db = db
         self.binance = binance
         self.temp_root = temp_root
-        self.minute_cache = MinuteArchiveCache(binance, temp_root)
+        self.minute_cache = BacktestMinuteArchiveCache(binance, temp_root)
         self.agg_cache = AggTradeArchiveCache(temp_root)
 
     def _canonical_symbols(self, quotes: list[str]) -> list[str]:
@@ -502,35 +813,18 @@ class ContinuousBacktestBuilder:
 
     def _validate_job(self, job: dict[str, Any]) -> tuple[date, date]:
         if str(job.get("protocol_version") or BACKTEST_PROTOCOL["version"]) != BACKTEST_PROTOCOL["version"]:
-            raise ValueError("Backtest protocol does not match the frozen V8 protocol")
-        confirmation_id = str(job["confirmation_job_id"])
-        rows = self.db.select("binance_confirmation_jobs", filters={"id": f"eq.{confirmation_id}"}, limit=1)
-        if not rows or rows[0].get("status") != "completed" or not bool(rows[0].get("passed")):
-            raise ValueError("A completed passing fresh-confirmation job is required")
+            raise ValueError("Backtest protocol does not match the frozen V9 protocol")
         start = date.fromisoformat(str(job["window_start_date"]))
         end = date.fromisoformat(str(job["window_end_date_exclusive"]))
         if start >= end:
             raise ValueError("Backtest start must be before end")
-        if end > date(2026, 5, 22):
-            raise ValueError("Sealed historical backtest must end on or before 2026-05-22")
-        # Ensure the backtest does not overlap the fresh-confirmation source scan.
-        confirmation = rows[0]
-        if confirmation.get("protocol_version") != "v8_h3_local_low_confirmation_1":
-            raise ValueError("V8 backtest requires a passing V8 H3 local-low confirmation")
-        scan_rows = self.db.select(
-            "binance_scan_jobs", filters={"id": f"eq.{confirmation['scan_id']}"}, limit=1,
-        ) if confirmation.get("scan_id") else []
-        if not scan_rows or scan_rows[0].get("event_definition_version") != "v7_rolling_8h" or int(scan_rows[0].get("window_minutes") or 0) != 480:
-            raise ValueError("V8 backtest requires a passing confirmation derived from the 480-minute event definition")
-        if scan_rows[0].get("window_end_date_exclusive"):
-            confirmation_end = date.fromisoformat(str(scan_rows[0]["window_end_date_exclusive"]))
-            if start < confirmation_end:
-                raise ValueError(
-                    f"Backtest must start on or after fresh-confirmation end {confirmation_end.isoformat()} to avoid overlap"
-                )
+        if start < date(2025, 7, 1) or end > date(2025, 11, 1):
+            raise ValueError("V9 is frozen to the untouched 2025-07-01 through 2025-11-01 window")
+        if start != date(2025, 7, 1) or end != date(2025, 11, 1):
+            raise ValueError("V9 dates are frozen at 2025-07-01 to 2025-11-01 exclusive")
         for key, expected in {
             "position_quote_notional": 500.0,
-            "take_profit_pct": 15.0,
+            "take_profit_pct": 10.0,
             "stop_loss_pct": 5.0,
             "max_hold_minutes": 180,
             "fee_bps": 10.0,
@@ -546,12 +840,14 @@ class ContinuousBacktestBuilder:
         start_day, end_day = self._validate_job(job)
         quotes = [str(x).upper() for x in (job.get("quote_assets") or ["USDT", "USDC", "FDUSD"])]
         symbols = self._canonical_symbols(quotes)
-        load_start = start_day - timedelta(days=10)
+        load_start = start_day - timedelta(days=8)
         work = Path(tempfile.mkdtemp(prefix=f"backtest-{job_id}-", dir=self.temp_root))
         try:
             all_candidates: list[dict[str, Any]] = []
             coverage_rows: list[dict[str, Any]] = []
             failures = 0
+            signal_generation_failures = 0
+            execution_failures = 0
             for idx, symbol in enumerate(symbols, start=1):
                 try:
                     loaded = self.minute_cache.load_symbol(symbol, load_start, end_day)
@@ -563,16 +859,25 @@ class ContinuousBacktestBuilder:
                     )
                     candidates = candidate_signals(symbol, signal_frame)
                     all_candidates.extend(candidates)
-                    available_days = sum(row.get("status") == "available" for row in loaded.source_manifest)
+                    requested_days = sum(int(row.get("days_covered") or 1) for row in loaded.source_manifest)
+                    available_days = sum(
+                        int(row.get("days_covered") or 1)
+                        for row in loaded.source_manifest
+                        if row.get("status") == "available"
+                    )
+                    observed_fraction = float(frame["observed"].mean()) if len(frame) else 0.0
                     coverage_rows.append({
                         "symbol": symbol,
                         "candidate_signals": len(candidates),
-                        "archive_days_requested": len(loaded.source_manifest),
+                        "archive_days_requested": requested_days,
                         "archive_days_available": available_days,
-                        "coverage_fraction": available_days / len(loaded.source_manifest) if loaded.source_manifest else 0.0,
+                        "archive_coverage_fraction": available_days / requested_days if requested_days else 0.0,
+                        "coverage_fraction": observed_fraction,
+                        "archive_manifest_entries": len(loaded.source_manifest),
                     })
                 except Exception as exc:
                     failures += 1
+                    signal_generation_failures += 1
                     coverage_rows.append({"symbol": symbol, "error": str(exc)[:1000]})
                     self.db.insert("binance_backtest_issues", {
                         "backtest_job_id": job_id,
@@ -650,6 +955,7 @@ class ContinuousBacktestBuilder:
                     execution = simulate_execution({**row, "signal_decision_time": signal_time.isoformat()}, agg)
                 except Exception as exc:
                     failures += 1
+                    execution_failures += 1
                     execution = {**row, "signal_decision_time": signal_time.isoformat(), "execution_status": "execution_error", "error": str(exc)[:1000]}
                     self.db.insert("binance_backtest_issues", {
                         "backtest_job_id": job_id,
@@ -685,33 +991,46 @@ class ContinuousBacktestBuilder:
             performance = _performance(executions_df, start_day, end_day)
             quality = {
                 "symbols_total": len(symbols),
-                "symbols_with_failures": failures,
+                "symbols_with_signal_generation_failures": signal_generation_failures,
+                "execution_failures": execution_failures,
                 "candidate_signals": len(candidates_df),
                 "candidate_signals_excluded_for_outcome_cutoff": candidates_excluded_for_outcome_cutoff,
                 "execution_status_counts": executions_df["execution_status"].value_counts().to_dict() if not executions_df.empty else {},
                 "minute_archive_mean_coverage": float(pd.DataFrame(coverage_rows).get("coverage_fraction", pd.Series(dtype=float)).mean()) if coverage_rows else None,
                 "current_tradeable_universe_survivorship_bias": True,
             }
+            quality["symbol_failure_fraction"] = signal_generation_failures / len(symbols) if symbols else 1.0
+            graduation = _graduation_decision(performance, quality)
             performance = _json_safe(performance)
             quality = _json_safe(quality)
+            graduation = _json_safe(graduation)
             decision = {
                 "protocol": BACKTEST_PROTOCOL,
                 "performance": performance,
                 "quality": quality,
-                "automatic_trading_decision": "research_output_only",
-                "pass_fail_not_preregistered": "V8 measures the fixed strategy; no profitability threshold is used to retune it.",
+                "graduation": graduation,
+                "programme_decision": (
+                    "PASS — momentum continuation merits a separate robustness and implementation review"
+                    if graduation["passed"]
+                    else "FAIL — retire the OHLCV-only Binance surge programme without parameter retuning"
+                ),
             }
 
             candidates_df.to_csv(work / "candidate_signals.csv", index=False)
             executions_df.to_csv(work / "executed_trades.csv", index=False)
             pd.DataFrame(coverage_rows).to_csv(work / "minute_data_coverage.csv", index=False)
             pd.DataFrame(agg_manifest_summary).to_csv(work / "aggregate_trade_coverage.csv", index=False)
+            pd.DataFrame(performance.get("chronological_thirds", [])).to_csv(work / "performance_by_chronological_third.csv", index=False)
+            pd.DataFrame(performance.get("monthly", [])).to_csv(work / "performance_by_month.csv", index=False)
+            pd.DataFrame(performance.get("by_symbol", [])).to_csv(work / "performance_by_symbol.csv", index=False)
+            pd.DataFrame(performance.get("daily", [])).to_csv(work / "daily_performance.csv", index=False)
             (work / "backtest_protocol.json").write_text(json.dumps(BACKTEST_PROTOCOL, indent=2), encoding="utf-8")
             (work / "backtest_results.json").write_text(json.dumps(decision, indent=2, default=str), encoding="utf-8")
             (work / "README.md").write_text(
-                "# Continuous executable historical backtest\n\n"
-                "This package evaluates the frozen H3-volatility-reversal-plus-continuation sequence for the eight-hour target event after every completed one-minute bar. "
-                "Entries and exits are reconstructed from historical aggregate trades. Treat the current-universe survivorship warning as material.\n",
+                "# V9 momentum-only continuous executable historical backtest\n\n"
+                "This package evaluates the frozen late-momentum signal after every completed one-minute bar, without any precursor filter. "
+                "The historical window and all trading and graduation parameters were frozen before results were opened. "
+                "Entries and exits are reconstructed from Binance aggregate trades. The current-universe survivorship warning remains material.\n",
                 encoding="utf-8",
             )
             package = work / "continuous_backtest_results.zip"
@@ -735,10 +1054,12 @@ class ContinuousBacktestBuilder:
                 "symbols_total": len(symbols),
                 "symbols_processed": len(symbols),
                 "candidate_signals": len(candidates_df),
-                "completed_trades": performance.get("completed_trades", 0),
+                "completed_trades": performance.get("overall", {}).get("completed_trades", 0),
                 "failures": failures,
                 "performance": performance,
                 "quality": quality,
+                "graduation": graduation,
+                "programme_decision": decision["programme_decision"],
                 "storage_path": storage_path,
             }
         finally:

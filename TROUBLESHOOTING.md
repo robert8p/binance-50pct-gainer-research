@@ -1,37 +1,29 @@
-# Troubleshooting — V8.0.0
+# V9 troubleshooting
 
-## Step 6 dropdown is empty
+## The final backtest button fails immediately
 
-Step 6 only lists completed eight-hour scans with an explicit end date no later than `2026-01-01`.
+Confirm `/health` shows version `9.0.0` and that `supabase/migrate_v8_to_v9.sql` completed successfully. The most common cause is the old database constraint that only permitted a +15% take-profit.
 
-Run a new Step 1 scan using:
+## Database error mentioning confirmation_job_id
 
-```text
-2025-11-01 to 2026-01-01
-```
+Run the V8-to-V9 migration. V9 deliberately stores `confirmation_job_id` as null because H1, H2 and H3 are retired.
 
-Then refresh the dashboard.
+## The job remains queued
 
-## Confirmation remains queued
+Open the Render worker service. It must be **Live** and its logs should show `Worker started; interrupted jobs recovered`. Confirm the Supabase environment variables are populated.
 
-Open Render and confirm `binance-50pct-scanner-worker` is Live. Check its latest logs and verify the Supabase environment variables are populated.
+## The job is very slow
 
-## Few controls were created
+V9 scans every completed minute across the canonical Binance Spot universe and downloads aggregate trades for executable candidates. A four-month run can take hours. Do not queue it twice.
 
-V8 deliberately rejects controls that:
+## Completed with warnings
 
-- lack complete ten-day history;
-- lack 500 quote units of pre-baseline liquidity;
-- sit near a known event;
-- fall into a different duration band;
-- or rise 50% within eight hours after the selected local-low baseline.
+Download the result package. Warnings can come from missing historical archives or failed execution reconstruction. Formal graduation also requires at least 95% average minute coverage and no more than 5% symbol-generation failures.
 
-The output package contains `control_rejections.csv` for diagnosis.
+## PASS appears on the dashboard
 
-## Confirmation fails
+A PASS does not authorise automated or live trading. Upload the result ZIP for an independent review of the outputs and the survivorship-bias limitation.
 
-Stop. Do not change H3 thresholds using the fresh result. The failed result is evidence that the exploratory pattern did not generalise adequately.
+## FAIL appears on the dashboard
 
-## Backtest dropdown is empty
-
-Step 7 is intentionally locked unless a V8 Step 6 job completes with PASS.
+Do not alter thresholds, exits or dates and rerun. The frozen research decision is to retire the OHLCV-only Binance surge programme.

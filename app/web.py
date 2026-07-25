@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 8-Hour 50% Surge Research", version="8.0.0")
+app = FastAPI(title="Binance Momentum Continuation Backtest", version="9.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "8.0.0"}
+    return {"status": "ok", "version": "9.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -360,39 +360,33 @@ def create_fresh_confirmation(
 @app.post("/continuous-backtest")
 def create_continuous_backtest(
     request: Request,
-    confirmation_job_id: str = Form(...),
-    window_start_date: str = Form("2026-01-01"),
-    window_end_date_exclusive: str = Form("2026-05-22"),
+    window_start_date: str = Form("2025-07-01"),
+    window_end_date_exclusive: str = Form("2025-11-01"),
     quote_assets: str = Form("USDT,USDC,FDUSD"),
 ) -> RedirectResponse:
     _auth(request)
-    confirmation = db.select(
-        "binance_confirmation_jobs", filters={"id": f"eq.{confirmation_job_id}"}, limit=1
-    )
-    if not confirmation or confirmation[0].get("status") != "completed" or not bool(confirmation[0].get("passed")):
-        raise HTTPException(400, "A completed passing fresh-confirmation job is required")
-    if confirmation[0].get("protocol_version") != "v8_h3_local_low_confirmation_1":
-        raise HTTPException(400, "Select a passing V8 H3 local-low confirmation job")
     try:
         start_day = date.fromisoformat(window_start_date)
         end_day = date.fromisoformat(window_end_date_exclusive)
     except ValueError as exc:
         raise HTTPException(400, "Backtest dates must use YYYY-MM-DD") from exc
-    if start_day >= end_day or end_day > date(2026, 5, 22):
-        raise HTTPException(400, "Use a non-empty untouched window ending no later than 2026-05-22")
+    if start_day != date(2025, 7, 1) or end_day != date(2025, 11, 1):
+        raise HTTPException(400, "V9 dates are frozen at 2025-07-01 to 2025-11-01 exclusive")
     quotes = [value.strip().upper() for value in quote_assets.split(",") if value.strip()]
+    if not quotes:
+        raise HTTPException(400, "At least one quote asset is required")
     db.insert(
         "binance_backtest_jobs",
         {
             "id": str(uuid.uuid4()),
-            "confirmation_job_id": confirmation_job_id,
+            "confirmation_job_id": None,
             "status": "queued",
-            "protocol_version": "v8_h3_continuous_executable_backtest_1",
+            "protocol_version": "v9_momentum_only_continuous_backtest_1",
             "window_start_date": start_day.isoformat(),
             "window_end_date_exclusive": end_day.isoformat(),
             "quote_assets": quotes,
             "position_quote_notional": 500,
-            "take_profit_pct": 15,
+            "take_profit_pct": 10,
             "stop_loss_pct": 5,
             "max_hold_minutes": 180,
             "fee_bps": 10,

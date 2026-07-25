@@ -581,9 +581,9 @@ create table if not exists binance_confirmation_issues (
 
 create table if not exists binance_backtest_jobs (
   id uuid primary key default gen_random_uuid(),
-  confirmation_job_id uuid not null references binance_confirmation_jobs(id) on delete restrict,
+  confirmation_job_id uuid references binance_confirmation_jobs(id) on delete restrict,
   status text not null check (status in ('queued','running','completed','completed_with_warnings','failed')),
-  protocol_version text not null default 'v8_h3_continuous_executable_backtest_1',
+  protocol_version text not null default 'v9_momentum_only_continuous_backtest_1',
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
@@ -592,7 +592,7 @@ create table if not exists binance_backtest_jobs (
   window_end_date_exclusive date not null,
   quote_assets jsonb not null default '["USDT","USDC","FDUSD"]'::jsonb,
   position_quote_notional numeric not null default 500 check (position_quote_notional = 500),
-  take_profit_pct numeric not null default 15 check (take_profit_pct = 15),
+  take_profit_pct numeric not null default 10 check (take_profit_pct in (10,15)),
   stop_loss_pct numeric not null default 5 check (stop_loss_pct = 5),
   max_hold_minutes integer not null default 180 check (max_hold_minutes = 180),
   fee_bps numeric not null default 10 check (fee_bps = 10),
@@ -681,7 +681,7 @@ alter table binance_baseline_context_jobs
 alter table binance_confirmation_jobs
   alter column protocol_version set default 'v8_h3_local_low_confirmation_1';
 alter table binance_backtest_jobs
-  alter column protocol_version set default 'v8_h3_continuous_executable_backtest_1';
+  alter column protocol_version set default 'v9_momentum_only_continuous_backtest_1';
 
 
 -- Binance eight-hour 50% surge research v7 -> v8
@@ -690,4 +690,29 @@ alter table binance_backtest_jobs
 alter table binance_confirmation_jobs
   alter column protocol_version set default 'v8_h3_local_low_confirmation_1';
 alter table binance_backtest_jobs
-  alter column protocol_version set default 'v8_h3_continuous_executable_backtest_1';
+  alter column protocol_version set default 'v9_momentum_only_continuous_backtest_1';
+
+
+-- Binance V8 -> V9: frozen momentum-only continuous historical backtest.
+-- Additive/preserving migration: all prior scans, confirmation jobs, backtests and files remain intact.
+
+alter table binance_backtest_jobs
+  alter column confirmation_job_id drop not null;
+
+alter table binance_backtest_jobs
+  alter column protocol_version set default 'v9_momentum_only_continuous_backtest_1';
+
+alter table binance_backtest_jobs
+  alter column take_profit_pct set default 10;
+
+-- V6-V8 created a strict +15% constraint. Retain old rows while allowing the frozen V9 +10% target.
+alter table binance_backtest_jobs
+  drop constraint if exists binance_backtest_jobs_take_profit_pct_check;
+
+alter table binance_backtest_jobs
+  add constraint binance_backtest_jobs_take_profit_pct_check
+  check (take_profit_pct in (10, 15));
+
+comment on table binance_backtest_jobs is
+  'Historical continuous backtests. V9 momentum-only jobs do not require a confirmation_job_id; earlier protocol rows remain linked.';
+

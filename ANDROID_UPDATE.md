@@ -1,17 +1,12 @@
-# Android update — V8
+# Android update to V9
 
-Download the V8 ZIP into Android Downloads, then in Termux:
+The simplest route is still to update the existing GitHub repository through the browser or Termux.
 
-```bash
-cd ~/binance-50pct-app
-unzip -o ~/storage/downloads/binance_8h_50pct_local_low_confirmation_v8_0_0.zip
-git add .
-git commit -m "Upgrade to v8 local-low confirmation"
-git push
-```
+1. Run `supabase/migrate_v8_to_v9.sql` in the Supabase SQL Editor.
+2. Upload every extracted V9 file to the existing GitHub repository and replace matching files.
+3. Commit as `Upgrade to v9 momentum-only backtest`.
+4. Wait for both Render services to redeploy.
+5. Confirm `/health` reports version `9.0.0`.
+6. Queue the one frozen momentum-only backtest from the dashboard.
 
-Before pushing, run `supabase/migrate_v7_to_v8.sql` in the Supabase SQL Editor.
-
-Wait for both Render services to redeploy and confirm `/health` reports `8.0.0`.
-
-For the fresh scan use `2025-11-01` to `2026-01-01`, then run Step 6 directly. Steps 2–5 are not required for V8 confirmation.
+No precursor-confirmation job is required.

@@ -1,0 +1,67 @@
+{
+  "version": "v9_momentum_only_continuous_backtest_1",
+  "research_question": "When the frozen late-momentum condition appears continuously across tradeable Binance Spot coins, can a realistic 500-quote-unit continuation trade produce a robust positive historical expectancy after fees and slippage?",
+  "historical_window": {
+    "start": "2025-07-01",
+    "end_exclusive": "2025-11-01",
+    "status": "untouched_at_protocol_freeze",
+    "dates_editable": false
+  },
+  "retired_inputs": [
+    "H1_WEAK_BASE_IGNITION",
+    "H2_RELATIVE_ACCELERATION",
+    "H3_VOLATILITY_REVERSAL",
+    "all baseline-context precursor filters"
+  ],
+  "signal_rule": {
+    "id": "FROZEN_LATE_MOMENTUM_3_OF_4",
+    "evaluation": "after every completed one-minute bar",
+    "minimum_components": 3,
+    "components": {
+      "ret_15m_pct_min": 0.9,
+      "quote_volume_15m_vs_prior_7d_same_time_min": 12.0,
+      "minimum_same_time_reference_days": 5,
+      "position_in_1440m_range_min": 0.74,
+      "max_runup_15m_pct_min": 3.3
+    },
+    "prior_5m_quote_volume_min": 500.0
+  },
+  "execution": {
+    "position_quote_notional": 500.0,
+    "entry_fill_window_seconds": 60,
+    "entry_proxy": "buyer-initiated Binance aggregate trades after the completed signal minute",
+    "take_profit_pct": 10.0,
+    "stop_loss_pct": 5.0,
+    "maximum_hold_minutes": 180,
+    "exit_fill_window_seconds": 300,
+    "exit_proxy": "seller-initiated Binance aggregate trades",
+    "fee_bps_each_side": 10.0,
+    "symbol_cooldown_minutes_after_exit_or_failure": 180,
+    "maximum_filled_entries_per_utc_day": 5,
+    "same_timestamp_ranking": [
+      "late_components_passed descending",
+      "quote_volume_15m_vs_prior_7d_same_time descending",
+      "symbol ascending"
+    ]
+  },
+  "graduation_criteria": {
+    "minimum_completed_trades": 100,
+    "minimum_unique_symbols": 20,
+    "total_net_pnl_quote_must_be_positive": true,
+    "minimum_expectancy_quote": 1.0,
+    "minimum_profit_factor": 1.25,
+    "maximum_drawdown_quote": 1500.0,
+    "maximum_consecutive_losses": 10,
+    "maximum_largest_symbol_trade_share": 0.15,
+    "minimum_trades_each_chronological_third": 20,
+    "positive_expectancy_required_in_each_chronological_third": true,
+    "symbol_cluster_bootstrap_95pct_lower_expectancy_must_exceed_zero": true,
+    "minimum_minute_archive_mean_coverage": 0.95,
+    "maximum_symbol_failure_fraction": 0.05
+  },
+  "decision_rule": {
+    "pass": "Every graduation criterion passes. This permits a separate implementation and robustness review, not automatic live trading.",
+    "fail": "Retire the OHLCV-only Binance surge programme. Do not retune signal or execution parameters using these results."
+  },
+  "known_limitation": "The universe begins from coins tradeable at run time; historically delisted coins are absent, creating survivorship bias."
+}

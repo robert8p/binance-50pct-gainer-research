@@ -1,14 +1,12 @@
-# Deployment — V8.0.0
+# V9 deployment
 
-V8 uses the existing GitHub, Render and Supabase deployment.
+This is an in-place upgrade.
 
-1. Run `supabase/migrate_v7_to_v8.sql` in Supabase SQL Editor.
-2. Upload all extracted V8 files into the existing private GitHub repository.
-3. Commit the replacement files.
-4. Wait for the web service and background worker to redeploy.
-5. Confirm `/health` reports version `8.0.0`.
-6. Run an explicit historical eight-hour scan from `2025-11-01` to `2026-01-01`.
-7. Select that completed scan in Step 6 and run corrected fresh confirmation.
-8. Run Step 7 only if Step 6 returns PASS.
+1. Run `supabase/migrate_v8_to_v9.sql`.
+2. Replace the existing repository contents with V9.
+3. Wait for Render web and worker redeployment.
+4. Confirm `/health` returns version `9.0.0`.
+5. Queue the frozen 1 July–1 November 2025 momentum-only backtest once.
+6. Download `continuous_backtest_results.zip` after completion.
 
-No new secrets or Render services are required.
+See `WINDOWS_UPDATE.md` for the simplest detailed instructions.

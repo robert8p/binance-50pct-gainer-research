@@ -1,110 +1,63 @@
-# Simple Windows upgrade and run guide — V8
+# Simple Windows upgrade to V9
 
-## A. Upgrade the existing app
+## 1. Download and extract
 
-### 1. Download and extract
+Download `binance_momentum_continuation_backtest_v9_0_0.zip` and select **Extract All**.
 
-Download and extract:
-
-```text
-binance_8h_50pct_local_low_confirmation_v8_0_0.zip
-```
-
-### 2. Update Supabase
+## 2. Update Supabase first
 
 1. Open the extracted folder.
-2. Open `supabase\migrate_v7_to_v8.sql` in Notepad.
+2. Open `supabase\migrate_v8_to_v9.sql` in Notepad.
 3. Press `Ctrl+A`, then `Ctrl+C`.
 4. Open your existing Supabase project.
 5. Open **SQL Editor → New query**.
 6. Paste the SQL and select **Run**.
 
-The migration preserves all existing scans and research packages.
+The migration preserves all previous scans and results. It allows V9 backtests to run without a precursor-confirmation job and permits the frozen +10% target.
 
-### 3. Replace the GitHub files
+## 3. Replace the GitHub files
 
-1. Open the existing private GitHub repository.
+1. Open your existing GitHub repository.
 2. Select **Add file → Upload files**.
-3. Drag everything from inside the extracted V8 folder onto the page.
-4. Confirm the top level still contains `app`, `supabase`, `tests`, `render.yaml` and `requirements.txt`.
+3. Drag everything from inside the extracted V9 folder onto GitHub.
+4. Allow files with the same names to be replaced.
 5. Commit with:
 
-```text
-Upgrade to v8 local-low confirmation
-```
+`Upgrade to v9 momentum-only backtest`
 
-### 4. Confirm Render
+## 4. Wait for Render
 
-Wait until both services are **Live**, then open:
+Wait for both the web service and worker to redeploy.
 
-```text
-https://YOUR-APP.onrender.com/health
-```
+Open:
 
-Expected result:
+`https://YOUR-APP.onrender.com/health`
 
-```json
-{"status":"ok","version":"8.0.0"}
-```
+Expected response:
 
-## B. Run the untouched V8 confirmation
+`{"status":"ok","version":"9.0.0"}`
 
-### 5. Queue the fresh eight-hour scan
+## 5. Run the final backtest
 
-In Step 1 use:
+On the dashboard, find **Final test — Run frozen momentum-only backtest**.
 
-```text
-Historical start:       2025-11-01
-Historical end:         2026-01-01
-Threshold:              50
-Rolling window:         8 hours
-Minimum exit notional:  500
-Saleability window:     300 seconds
-```
+The historical dates are locked to:
 
-Queue the scan and wait for `completed` or `completed_with_warnings`.
+- Start: `2025-07-01`
+- End, exclusive: `2025-11-01`
 
-You do not need to run Steps 2–5 for this confirmation round.
+Leave the quote preference as:
 
-### 6. Run Step 6
+`USDT,USDC,FDUSD`
 
-In **Step 6 — Confirm H3 with algorithmic local-low controls**:
+Select **Queue final continuous backtest** once.
 
-1. Select the completed `2025-11-01` to `2026-01-01` scan.
-2. Leave controls per event at `5`.
-3. Leave history at `10` days.
-4. Leave liquidity at `500`.
-5. Select **Run corrected fresh confirmation**.
+You do not need to run Steps 1–6. V9 does not use an event scan, matched controls or a precursor confirmation.
 
-The worker will:
+## 6. Download the result
 
-- calculate H3 at each genuine event baseline;
-- build controls using the same rolling-minimum baseline algorithm;
-- reject contaminated controls;
-- test discovery, validation and sealed chronological segments;
-- report results by event-duration band.
+When the job is complete, download:
 
-Refresh the dashboard periodically. Do not queue the job twice.
+`continuous_backtest_results.zip`
 
-### 7. Share the result
-
-When complete, download:
-
-```text
-fresh_confirmation_results.zip
-```
-
-Upload that ZIP for analysis.
-
-### 8. Step 7 only after PASS
-
-If Step 6 says **FAIL**, stop. Do not alter the 0.4 or +5% thresholds and rerun while calling it confirmation.
-
-If Step 6 says **PASS**, Step 7 becomes available. Use:
-
-```text
-Backtest start:          2026-01-01
-Backtest end exclusive:  2026-05-22
-```
-
-The frozen trade remains 500 quote units, +15% take profit, −5% stop loss, three-hour maximum hold, 0.10% fee each side and no more than five filled entries per UTC day.
+Upload that ZIP to ChatGPT for the final assessment. Do not queue a second run or change any parameter after seeing the outcome.

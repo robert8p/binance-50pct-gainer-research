@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Binance 8-Hour 50% Surge Research</title>
+  <title>Binance Momentum Continuation Backtest</title>
   <style>
     :root { color-scheme: dark; --bg:#0b0f14; --panel:#141a22; --line:#27303d; --text:#f3f5f7; --muted:#9ba7b4; --accent:#f3ba2f; --good:#65d68a; }
     * { box-sizing:border-box; } body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); }
@@ -18,8 +18,8 @@
   </style>
 </head>
 <body><main>
-  <h1>Binance 8-Hour 50% Surge Research</h1>
-  <p class="muted">v8.0 tests the frozen volatility-reversal precursor using non-event baselines selected by the same eight-hour rolling-minimum algorithm as genuine surge events.</p>
+  <h1>Binance Momentum Continuation Backtest</h1>
+  <p class="muted">v9.0 performs the final OHLCV-only test: the frozen late-momentum trigger is evaluated after every completed one-minute bar, with realistic aggregate-trade entry and exit reconstruction.</p>
   <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative eight-hour rolling window. The price only needs to touch the threshold.</p>
   <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not guarantee a fill at the threshold.</p>
 
@@ -107,35 +107,23 @@
     </section>
 
     <section class="card">
-      <h2>Step 6 — Confirm H3 with algorithmic local-low controls</h2>
-      <form method="post" action="/fresh-confirmation">
-        <label>Completed untouched eight-hour scan ending by 1 Jan 2026</label><select name="scan_id" required>
-          {% for scan in fresh_confirmation_scans %}<option value="{{ scan.id }}">{{ scan.created_at }} — {{ scan.events_found or 0 }} events — {{ scan.window_start_date }} to {{ scan.window_end_date_exclusive }} — {{ scan.id[:8] }}</option>{% endfor %}
-        </select>
-        <label>Algorithmic local-low controls per event</label><input name="controls_per_event" type="number" value="5" min="1" max="10">
-        <label>Frozen predictor history</label><input name="prior_days" type="number" value="10" readonly>
-        <label>Frozen liquidity floor</label><input name="min_entry_notional" type="number" value="500" readonly>
-        <label>Frozen precursor</label><input value="1-day/7-day volatility ratio ≥0.4 + prior week return ≤+5%" disabled>
-        <label>Core acceptance</label><input value="≥30% events; ≤30% controls; ≥1.5× ratio; matched p≤0.05; cluster CI &gt;1" disabled>
-        <button>Run corrected fresh confirmation</button>
-      </form>
-      <p class="muted small">Controls use the scanner’s identical baseline rule: the latest minimum low in the prior 479 minutes. Any control that subsequently rises 50% within eight hours is rejected. Results are also split by event duration band.</p>
+      <h2>Retired precursor research</h2>
+      <p>H1, H2 and H3 are retired. Their old jobs and downloads remain visible for audit purposes, but they are not inputs to V9.</p>
+      <p class="muted small">V9 does not require a scan, matched controls, baseline context or a passing precursor confirmation.</p>
     </section>
 
     <section class="card">
-      <h2>Step 7 — Run sealed continuous backtest</h2>
+      <h2>Final test — Run frozen momentum-only backtest</h2>
       <form method="post" action="/continuous-backtest">
-        <label>Passing fresh-confirmation job</label><select name="confirmation_job_id" required>
-          {% for job in passed_confirmation_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — PASS — {{ job.id[:8] }}</option>{% endfor %}
-        </select>
-        <label>Untouched backtest start (UTC)</label><input name="window_start_date" type="date" value="2026-01-01">
-        <label>Untouched backtest end (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2026-05-22">
+        <label>Untouched historical start (UTC)</label><input name="window_start_date" type="date" value="2025-07-01" readonly>
+        <label>Untouched historical end (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2025-11-01" readonly>
         <label>Canonical quote preference</label><input name="quote_assets" value="USDT,USDC,FDUSD">
-        <label>Frozen trade</label><input value="500 quote; +15% TP; −5% SL; 3h hold; 0.10% fee each side" disabled>
-        <label>Portfolio limit</label><input value="Maximum five filled entries per UTC day" disabled>
-        <button>Queue sealed continuous backtest</button>
+        <label>Frozen signal</label><input value="At least 3 of: 15m return ≥0.9%; 15m volume ≥12× norm; 24h range position ≥74%; 15m run-up ≥3.3%" disabled>
+        <label>Frozen trade</label><input value="500 quote units; +10% TP; −5% SL; 3h hold; 0.10% fee each side" disabled>
+        <label>Portfolio controls</label><input value="3h same-coin cooldown; maximum five filled entries per UTC day" disabled>
+        <button>Queue final continuous backtest</button>
       </form>
-      <p class="muted small">This evaluates H3 after every completed one-minute bar, arms the coin for eight hours, and then requires the unchanged late-momentum confirmation. Fills are reconstructed from Binance aggregate trades. Do not change dates or parameters after seeing results.</p>
+      <p class="muted small">The trigger is checked after every completed one-minute bar. Entries begin with the first buyer-initiated aggregate trade after that minute; exits use seller-initiated aggregate trades. Parameters and dates cannot be changed after results are opened.</p>
     </section>
   </div>
 
@@ -181,9 +169,10 @@
   </table></div></section>
 
   <section class="card"><h2>Continuous backtest jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Window</th><th>Symbols</th><th>Signals</th><th>Completed trades</th><th>Failures</th></tr></thead>
+    <thead><tr><th>Created</th><th>Status</th><th>Decision</th><th>Window</th><th>Symbols</th><th>Signals</th><th>Completed trades</th><th>Failures</th></tr></thead>
     <tbody>{% for job in backtest_jobs %}<tr>
       <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
+      <td class="status">{% if job.result_json and job.result_json.graduation %}{{ job.result_json.graduation.decision }}{% else %}—{% endif %}</td>
       <td>{{ job.window_start_date }} to {{ job.window_end_date_exclusive }}</td><td>{{ job.symbols_processed or 0 }}/{{ job.symbols_total or 0 }}</td>
       <td>{{ job.candidate_signals or 0 }}</td><td>{{ job.completed_trades or 0 }}</td><td>{{ job.failures or 0 }}</td>
     </tr>{% endfor %}</tbody>
