@@ -256,7 +256,7 @@ def main() -> None:
                     result = chatgpt_exporter.run(chatgpt_export_job)
                     db.update(
                         "binance_chatgpt_export_jobs",
-                        {"id": f"eq.{job_id}"},
+                        {"id": f"eq.{job_id}", "status": "eq.running"},
                         {
                             "status": "completed_with_warnings" if result.get("failures", 0) else "completed",
                             "completed_at": datetime.now(timezone.utc).isoformat(),

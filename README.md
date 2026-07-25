@@ -1,49 +1,44 @@
-# Binance ChatGPT Research Exporter — V10.1.0
+# Binance ChatGPT Research Exporter — V10.2.0
 
-V10.1 runs the neutral ChatGPT research export over **2026 year to date**.
+V10.2 keeps the application neutral: it collects, labels, audits and packages Binance evidence; ChatGPT performs feature generation and pattern discovery.
 
-The app is research infrastructure only. It:
+## Research window
 
-- scans Binance Spot for saleable coins that rose at least 50% within eight hours;
-- selects same-coin non-event controls using the scanner's identical rolling-local-low algorithm;
-- downloads ten days of raw one-minute Binance data before each event/control baseline;
-- adds raw BTC, ETH and BNB reference series;
-- exports neutral, deduplicated Parquet evidence for ChatGPT.
+- Start: 2026-01-01 inclusive
+- End: 2026-07-25 exclusive
+- Outcome: saleable >=50% low-to-later-high rise within eight hours
+- Treatment: all 2026 data are exploratory discovery evidence
 
-The app does **not** choose a pattern, rank a feature, optimise thresholds, fit a model or simulate a trade.
+## Full-universe correction
 
-## Frozen 2026 window
+V10.1 exported only coins that had at least one qualifying event. V10.2 covers every canonical Binance Spot symbol in the source scan.
 
-- Start inclusive: `2026-01-01`
-- End exclusive: `2026-07-25`
-- Latest included UTC day: `2026-07-24`
-- Total: 205 completed UTC days
+It exports:
 
-## Research-integrity treatment
+1. Every saleable event with ten days of raw one-minute history.
+2. Up to five same-coin scanner-equivalent controls per event.
+3. One deterministic scanner-equivalent non-event background window for every canonical symbol, including coins with no qualifying event.
+4. Full-universe daily OHLCV/trade data.
+5. Raw BTCUSDT, ETHUSDT and BNBUSDT one-minute reference data.
+6. A symbol inventory showing event counts, background coverage and failures.
 
-Parts of 2026 were already examined during earlier rounds. V10.1 therefore treats **all 2026 data as exploratory discovery evidence**. It deliberately does not create validation or sealed-test files from 2026.
+The app does not calculate predictive features, optimise thresholds or define a trading rule.
 
-After ChatGPT completes blank-canvas discovery and freezes candidate rules, separate earlier periods will be collected for validation and sealed testing.
+## Output
 
-## Output files
+Large evidence is divided by symbol into upload-sized files:
 
-- `CHATGPT_RESEARCH_INDEX.zip` — manifests, checksums, exclusions and counts.
-- `DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip` — raw labelled 2026 discovery evidence.
+- `CHATGPT_RESEARCH_INDEX.zip`
+- `DISCOVERY_2026_UNIVERSE_REFERENCE.zip`
+- `DISCOVERY_2026_SYMBOLS_PART_001.zip`
+- further numbered symbol parts as required
 
-Each evidence package contains `samples.csv`, deduplicated `minute_data/*.parquet`, raw BTC/ETH/BNB reference data, a neutral loader and a data dictionary.
+Upload the index, reference package and every numbered symbol part to ChatGPT.
 
-## Deployment
+## Cancellation
 
-If V10 tables already exist, no new Supabase migration is needed. Upload the V10.1 files and wait for both Render services to redeploy.
+Queued or running neutral exports can be cancelled from the dashboard. Cancellation is cooperative: the worker stops after the current symbol operation and cleans its temporary job directory.
 
-If upgrading directly from V9 or earlier, run `supabase/migrate_v9_to_v10.sql` first.
+## Upgrade
 
-After `/health` shows `10.1.0`:
-
-1. Queue the fixed 2026-01-01 to 2026-07-25 eight-hour scan.
-2. Select that completed scan under the neutral ChatGPT export section.
-3. Queue the export once.
-4. Download the index and 2026 discovery packages.
-5. Upload both to ChatGPT for blank-canvas analysis.
-
-The exact contract is in `docs/V10_2026_DISCOVERY_PROTOCOL.json`.
+No new Supabase migration is required when V10.0 or V10.1 is already installed. Replace the repository files, redeploy both Render services, confirm `/health` reports `10.2.0`, and queue a new export from the completed 2026 scan.

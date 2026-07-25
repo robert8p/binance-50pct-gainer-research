@@ -1,49 +1,63 @@
-# Simple Android upgrade to V10.1 — 2026 discovery
+# Simple Windows update — V10.2
 
-## 1. Extract the ZIP
+## 1. Stop the old export
 
-Download `binance_chatgpt_research_exporter_2026_v10_1_0.zip` to your phone. Use your existing GitHub upload method or Termux workflow to replace the repository files.
+1. Open Render and suspend `binance-50pct-scanner-worker`.
+2. In Supabase SQL Editor run:
 
-## 2. Supabase
+```sql
+update binance_chatgpt_export_jobs
+set status = 'failed',
+    completed_at = now(),
+    heartbeat_at = null,
+    error_message = 'Cancelled manually: superseded by full-universe exporter'
+where status in ('queued','running');
+```
 
-If you already deployed V10, skip this step: V10.1 needs no new database tables.
+Leave the worker suspended until V10.2 is deployed.
 
-If upgrading directly from V9 or earlier, run `supabase\migrate_v9_to_v10.sql` in Supabase SQL Editor.
+## 2. Update GitHub
 
-## 3. Update GitHub
+1. Extract `binance_chatgpt_research_exporter_full_universe_v10_2_0.zip`.
+2. Open the existing GitHub repository.
+3. Select **Add file → Upload files**.
+4. Upload everything from inside the extracted folder, replacing matching files.
+5. Commit with:
 
-1. Open the existing GitHub repository.
-2. Select **Add file → Upload files**.
-3. Drag everything from inside the extracted V10.1 folder onto GitHub.
-4. Replace matching files.
-5. Commit with: `Upgrade to v10.1 2026 ChatGPT discovery`.
+```text
+Upgrade to v10.2 full-universe ChatGPT exporter
+```
 
-## 4. Confirm Render
+No new Supabase migration is required if V10 is already installed.
 
-Wait for both services to redeploy. Open:
+## 3. Redeploy
 
-`https://YOUR-APP.onrender.com/health`
+Resume the Render worker after GitHub has updated. Wait for both services to redeploy.
+
+Open:
+
+```text
+https://YOUR-APP.onrender.com/health
+```
 
 Expected:
 
-`{"status":"ok","version":"10.1.0"}`
+```json
+{"status":"ok","version":"10.2.0"}
+```
 
-## 5. Run the 2026 scan
+## 4. Queue the corrected export
 
-Leave the fixed dates as:
+Use the already completed 2026 scan. You do not need to rerun it.
 
-- Start: `2026-01-01`
-- End exclusive: `2026-07-25`
+The job's total-symbol count should now represent the complete canonical Binance universe, not only event-bearing coins.
 
-This includes completed UTC data through 24 July 2026. Select **Queue fresh scan** and wait for completion.
+The dashboard now includes a **Cancel** button for queued or running export jobs.
 
-## 6. Build the neutral package
+## 5. Download after completion
 
-Select the completed 2026 scan and select **Queue neutral research export**. The export may take several hours. Do not queue it twice.
-
-## 7. Download and upload to ChatGPT
+Download and upload to ChatGPT:
 
 - `CHATGPT_RESEARCH_INDEX.zip`
-- `DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip`
-
-There are deliberately no 2026 validation or sealed files. Those will be collected from separate periods after ChatGPT freezes candidate rules.
+- `DISCOVERY_2026_UNIVERSE_REFERENCE.zip`
+- every `DISCOVERY_2026_SYMBOLS_PART_*.zip`

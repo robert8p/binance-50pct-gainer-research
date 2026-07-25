@@ -1,22 +1,35 @@
-# V10.1 troubleshooting
+# Troubleshooting — V10.2
 
-## Nothing appears in the export dropdown
+## The denominator still equals only event-bearing symbols
 
-The dropdown only accepts a completed eight-hour scan with exactly:
+Confirm `/health` reports `10.2.0`. If it reports an older version, redeploy both Render services.
 
-- Start: `2026-01-01`
-- End exclusive: `2026-07-25`
+## Stop an export
 
-Refresh the dashboard after the scan completes and confirm `/health` shows version `10.1.0`.
+Use the dashboard **Cancel** button. The current symbol operation may finish before the worker notices cancellation.
 
-## Scan rejects the date range
+For an old release without the button:
 
-V10.1 expands the explicit historical-window limit to 240 days. If the app still says 180 days, Render is running an older version.
+1. Suspend the Render worker.
+2. Run:
 
-## Export appears slow
+```sql
+update binance_chatgpt_export_jobs
+set status='failed', completed_at=now(), heartbeat_at=null,
+    error_message='Cancelled manually'
+where status in ('queued','running');
+```
 
-The job downloads and deduplicates ten days of one-minute history for events and controls across 205 scan days. Do not queue it twice. Check worker logs and heartbeat.
+3. Deploy V10.2 before resuming the worker.
 
-## No validation or sealed files appear
+## Some symbols are daily-only
 
-This is intentional. Earlier 2026 research means the year cannot honestly provide untouched validation. V10.1 exports 2026 as discovery only.
+The universe-reference package intentionally lists every canonical symbol. A recently listed coin may lack ten complete days of minute history and therefore have no raw background window. Its daily data and failure reason remain in the audit files.
+
+## Several discovery ZIPs appear
+
+This is expected. V10.2 chunks compressed symbol evidence at approximately 300 MB per ZIP so the files are practical to upload and analyse.
+
+## Job is slow
+
+The exporter now reads every canonical symbol rather than only event-bearing symbols. Check that the worker heartbeat and symbol count continue advancing. Do not queue a duplicate job.

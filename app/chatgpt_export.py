@@ -16,17 +16,24 @@ import pandas as pd
 
 from .binance import BinanceClient, sha256_file
 from .backtest import BacktestMinuteArchiveCache
-from .confirmation import duration_band, select_local_low_controls_for_event
+from .confirmation import (
+    derive_algorithmic_baseline,
+    duration_band,
+    select_local_low_controls_for_event,
+)
 from .matched_controls import (
     REFERENCE_SYMBOLS,
     SPLITS,
     assign_temporal_splits,
     floor_minute,
     parse_datetime,
+    deterministic_uuid,
 )
 from .supabase import SupabaseClient
 
-PROTOCOL_VERSION = "v10_2026_discovery_export_1"
+PROTOCOL_VERSION = "v10_2026_full_universe_discovery_export_2"
+BACKGROUND_SAMPLES_PER_SYMBOL = 1
+CHUNK_TARGET_BYTES = 300 * 1024 * 1024
 EXPORT_SPLITS = ("discovery",)
 RAW_COLUMNS = (
     "open",
@@ -42,16 +49,14 @@ RAW_COLUMNS = (
 
 
 def safe_filename(value: str) -> str:
-    """Return an ASCII-safe, deterministic filename stem.
-
-    Binance symbols can contain non-Latin characters. Supabase object paths and
-    downstream ZIP tooling are more reliable when paths remain ASCII-only.
-    """
+    """Return a collision-resistant ASCII filename stem."""
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
     cleaned = "".join(ch if ch.isascii() and ch.isalnum() else "_" for ch in value)
     cleaned = "_".join(part for part in cleaned.split("_") if part)
-    if cleaned:
+    if cleaned and cleaned == value:
         return cleaned[:80]
-    return f"symbol_{hashlib.sha256(value.encode('utf-8')).hexdigest()[:12]}"
+    prefix = cleaned[:60] if cleaned else "symbol"
+    return f"{prefix}_{digest}"
 
 
 def extract_raw_window(
@@ -151,7 +156,7 @@ def _write_data_dictionary(path: Path) -> None:
 This package is deliberately a neutral evidence export. It contains no preferred predictor, signal or trading rule.
 
 ## samples.csv
-One row per event or algorithmically matched non-event sample. `label=1` identifies a saleable >=50% eight-hour event; `label=0` identifies a same-coin control selected with the same rolling-local-low procedure.
+One row per event or neutral non-event sample. `label=1` identifies a saleable >=50% eight-hour event. `label=0` includes both same-coin scanner-equivalent controls and deterministic full-universe background samples, including coins with no 50% event in 2026.
 
 ## minute_data/*.parquet
 Raw Binance one-minute kline fields stored once per physical symbol/time. Use `symbol`, `history_start`, `history_end` and `baseline_time` from samples.csv to reconstruct each labelled ten-day window. No missing values are imputed.
@@ -162,10 +167,10 @@ Columns: open_time, open, high, low, close, base volume, quote volume, trade cou
 A neutral helper that reconstructs one labelled sample window from samples.csv and the deduplicated symbol Parquet file. It creates no predictive features.
 
 ## reference_data/*.parquet
-Raw one-minute BTCUSDT, ETHUSDT and BNBUSDT data covering the 2026 discovery period. These are provided for ChatGPT to construct market-relative patterns without the app deciding how to combine them.
+The separate universe-reference package contains raw one-minute BTCUSDT, ETHUSDT and BNBUSDT data, the complete canonical-symbol inventory, and full-universe daily bars.
 
 ## Integrity rules
-Event and control baselines use the same 480-minute rolling-minimum algorithm. Controls are rejected when the selected low subsequently gains 50% within eight hours or lies within 24 hours of a known event. All 2026 samples are exported as exploratory discovery evidence. Fresh validation and sealed periods are not created from this opened year.
+Event, same-coin control and full-universe background baselines use the same 480-minute rolling-minimum algorithm. Negative samples are rejected when the selected low subsequently gains 50% within eight hours or lies within 24 hours of a known event in that coin. All 2026 samples are exploratory discovery evidence.
 """
     path.write_text(text, encoding="utf-8")
 
@@ -203,6 +208,220 @@ def load_sample(sample_id: str, package_root: str | Path = ".") -> tuple[pd.Seri
     )
 
 
+class ExportCancelled(RuntimeError):
+    pass
+
+
+def _stable_int(*values: Any) -> int:
+    payload = "|".join(str(value) for value in values).encode("utf-8")
+    return int(hashlib.sha256(payload).hexdigest()[:16], 16)
+
+
+def _background_candidate_times(
+    symbol: str,
+    scan_start: date,
+    scan_end_exclusive: date,
+    *,
+    prior_days: int,
+    sample_index: int,
+) -> list[datetime]:
+    """Deterministic calendar candidates chosen without market outcomes."""
+    first_day = scan_start + timedelta(days=prior_days + 2)
+    last_day = scan_end_exclusive - timedelta(days=2)
+    span = (last_day - first_day).days + 1
+    if span <= 0:
+        return []
+    seed = _stable_int(PROTOCOL_VERSION, symbol, sample_index)
+    centre = seed % span
+    minute_of_day = (seed // max(span, 1)) % 1440
+    offsets = [0]
+    for distance in range(1, span):
+        offsets.extend((-distance, distance))
+    candidates: list[datetime] = []
+    seen: set[date] = set()
+    for delta in offsets:
+        index = (centre + delta) % span
+        candidate_day = first_day + timedelta(days=index)
+        if candidate_day in seen:
+            continue
+        seen.add(candidate_day)
+        candidates.append(
+            datetime.combine(candidate_day, time.min, tzinfo=timezone.utc)
+            + timedelta(minutes=int(minute_of_day))
+        )
+    return candidates
+
+
+def select_universe_background_samples(
+    *,
+    symbol_info: dict[str, Any],
+    frame: pd.DataFrame,
+    scan_start: date,
+    scan_end_exclusive: date,
+    known_event_times: list[datetime],
+    prior_days: int,
+    threshold_pct: float,
+    window_minutes: int,
+    used_baselines: Counter[tuple[str, datetime]],
+    count: int = BACKGROUND_SAMPLES_PER_SYMBOL,
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    """Choose neutral scanner-equivalent negatives for every canonical symbol."""
+    symbol = str(symbol_info["symbol"])
+    rejection: Counter[str] = Counter()
+    rows: list[dict[str, Any]] = []
+    for sample_index in range(count):
+        selected: dict[str, Any] | None = None
+        for candidate_rank, pseudo_cross in enumerate(
+            _background_candidate_times(
+                symbol,
+                scan_start,
+                scan_end_exclusive,
+                prior_days=prior_days,
+                sample_index=sample_index,
+            ),
+            start=1,
+        ):
+            if any(abs((pseudo_cross - known).total_seconds()) < 24 * 3600 for known in known_event_times):
+                rejection["background_within_24h_of_known_event"] += 1
+                continue
+            derived = derive_algorithmic_baseline(
+                frame,
+                pseudo_cross,
+                window_minutes=window_minutes,
+                threshold_pct=threshold_pct,
+            )
+            if derived is None:
+                rejection["background_incomplete_algorithm_window"] += 1
+                continue
+            if derived["contaminated"]:
+                rejection["background_future_50pct_contamination"] += 1
+                continue
+            baseline = parse_datetime(derived["baseline_time"])
+            if any(abs((baseline - known).total_seconds()) < 24 * 3600 for known in known_event_times):
+                rejection["background_baseline_within_24h_of_known_event"] += 1
+                continue
+            valid, quality = _history_quality(frame, baseline, prior_days)
+            if not valid:
+                rejection["background_incomplete_ten_day_history"] += 1
+                continue
+            key = (symbol, floor_minute(baseline))
+            if used_baselines[key] > 0:
+                rejection["background_reused_baseline"] += 1
+                continue
+            used_baselines[key] += 1
+            selected = {
+                "derived": derived,
+                "quality": quality,
+                "candidate_rank": candidate_rank,
+                "pseudo_cross": pseudo_cross,
+            }
+            break
+        if selected is None:
+            continue
+        derived = selected["derived"]
+        sample_id = deterministic_uuid(
+            "v10.2-full-universe-background",
+            symbol,
+            sample_index,
+            selected["pseudo_cross"].isoformat(),
+            derived["baseline_time"].isoformat(),
+        )
+        rows.append({
+            "sample_id": sample_id,
+            "match_group_id": sample_id,
+            "event_id": None,
+            "control_id": sample_id,
+            "control_rank": sample_index + 1,
+            "sample_type": "universe_background",
+            "control_scope": "full_universe",
+            "label": 0,
+            "split": "discovery",
+            "symbol": symbol,
+            "minute_data_file": f"minute_data/{safe_filename(symbol)}.parquet",
+            "base_asset": symbol_info.get("base_asset"),
+            "quote_asset": symbol_info.get("quote_asset"),
+            "baseline_time": parse_datetime(derived["baseline_time"]).isoformat(),
+            "cross_or_pseudo_cross_time": parse_datetime(derived["pseudo_cross_time"]).isoformat(),
+            "event_duration_minutes": int(derived["duration_minutes"]),
+            "event_duration_band": str(derived["duration_band"]),
+            "selected_baseline_duration_minutes": int(derived["duration_minutes"]),
+            "selected_baseline_duration_band": str(derived["duration_band"]),
+            "outcome_maximum_future_8h_gain_pct": float(derived["maximum_future_8h_gain_pct"]),
+            "outcome_sellability_pass": False,
+            "outcome_exit_vwap": None,
+            "outcome_exit_vwap_vs_threshold_pct": None,
+            "match_tier": "deterministic_full_universe_background",
+            "calendar_distance_days": None,
+            "clock_offset_minutes": None,
+            "duration_difference_minutes": None,
+            "background_candidate_rank": int(selected["candidate_rank"]),
+            **selected["quality"],
+        })
+    return rows, rejection
+
+
+def _chunk_symbols(symbol_files: dict[str, Path], target_bytes: int) -> list[list[str]]:
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    current_size = 0
+    for symbol in sorted(symbol_files):
+        size = symbol_files[symbol].stat().st_size
+        if current and current_size + size > target_bytes:
+            chunks.append(current)
+            current = []
+            current_size = 0
+        current.append(symbol)
+        current_size += size
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _write_symbol_chunk(
+    destination: Path,
+    *,
+    symbols: list[str],
+    symbol_files: dict[str, Path],
+    samples: pd.DataFrame,
+    dictionary_path: Path,
+    loader_path: Path,
+    part_number: int,
+    total_parts: int,
+) -> dict[str, Any]:
+    subset = samples[samples["symbol"].astype(str).isin(symbols)].copy()
+    temp_csv = destination.with_suffix(".samples.csv")
+    temp_meta = destination.with_suffix(".metadata.json")
+    subset.to_csv(temp_csv, index=False)
+    metadata = {
+        "protocol_version": PROTOCOL_VERSION,
+        "part_number": part_number,
+        "total_parts": total_parts,
+        "symbols": len(symbols),
+        "samples": int(len(subset)),
+        "events": int((subset["label"] == 1).sum()),
+        "same_coin_controls": int((subset.get("control_scope") == "same_coin").sum()),
+        "full_universe_backgrounds": int((subset.get("control_scope") == "full_universe").sum()),
+        "warning": "Exploratory 2026 discovery evidence only.",
+    }
+    temp_meta.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    try:
+        with zipfile.ZipFile(destination, "w") as archive:
+            archive.write(temp_csv, "samples.csv", compress_type=zipfile.ZIP_DEFLATED)
+            archive.write(temp_meta, "chunk_metadata.json", compress_type=zipfile.ZIP_DEFLATED)
+            archive.write(dictionary_path, "DATA_DICTIONARY.md", compress_type=zipfile.ZIP_DEFLATED)
+            archive.write(loader_path, "analysis_loader.py", compress_type=zipfile.ZIP_DEFLATED)
+            for symbol in symbols:
+                archive.write(
+                    symbol_files[symbol],
+                    f"minute_data/{symbol_files[symbol].name}",
+                    compress_type=zipfile.ZIP_STORED,
+                )
+    finally:
+        temp_csv.unlink(missing_ok=True)
+        temp_meta.unlink(missing_ok=True)
+    return metadata
+
+
 class ChatGPTResearchExporter:
     def __init__(self, db: SupabaseClient, binance: BinanceClient, temp_root: Path):
         self.db = db
@@ -211,10 +430,19 @@ class ChatGPTResearchExporter:
         self.cache_root = temp_root / "chatgpt-export-cache"
         self.cache = BacktestMinuteArchiveCache(binance, self.cache_root)
 
+    def _assert_active(self, job_id: str) -> None:
+        rows = self.db.select(
+            "binance_chatgpt_export_jobs",
+            filters={"id": f"eq.{job_id}"},
+            limit=1,
+        )
+        if not rows or rows[0].get("status") != "running":
+            raise ExportCancelled("ChatGPT research export cancelled")
+
     def run(self, job: dict[str, Any]) -> dict[str, Any]:
         job_id = str(job["id"])
         if str(job.get("protocol_version") or PROTOCOL_VERSION) != PROTOCOL_VERSION:
-            raise ValueError("Unsupported neutral research-export protocol")
+            raise ValueError("Unsupported full-universe research-export protocol")
         scan_id = str(job["scan_id"])
         scan_rows = self.db.select("binance_scan_jobs", filters={"id": f"eq.{scan_id}"}, limit=1)
         if not scan_rows:
@@ -230,14 +458,11 @@ class ChatGPTResearchExporter:
             raise ValueError("Use an explicit historical scan window for staged research")
         scan_start = date.fromisoformat(str(start_text)[:10])
         scan_end = date.fromisoformat(str(end_text)[:10])
-
         if scan_start != date(2026, 1, 1) or scan_end != date(2026, 7, 25):
-            raise ValueError("V10.1 discovery export is frozen to 2026-01-01 through 2026-07-25 exclusive")
+            raise ValueError("V10.2 discovery export is frozen to 2026-01-01 through 2026-07-25 exclusive")
 
         controls_per_event = int(job.get("controls_per_event") or 5)
         prior_days = int(job.get("prior_days") or 10)
-        discovery_pct = int(job.get("discovery_pct") or 60)
-        validation_pct = int(job.get("validation_pct") or 20)
         include_baseline_bar = bool(job.get("include_baseline_bar", True))
         threshold_pct = float(scan.get("threshold_pct") or 50)
         window_minutes = int(scan.get("window_minutes") or 480)
@@ -249,62 +474,76 @@ class ChatGPTResearchExporter:
         )
         if not events:
             raise RuntimeError("Source scan has no saleable events")
-        # All 2026 evidence is exploratory because portions of the year have already
-        # been inspected in earlier research rounds. Do not manufacture validation
-        # or sealed evidence from an opened period.
-        split_map = {date.fromisoformat(str(event["event_date"])): "discovery" for event in events}
-        all_days: set[date] = set()
-        day_cursor = scan_start
-        while day_cursor < scan_end:
-            all_days.add(day_cursor)
-            day_cursor += timedelta(days=1)
-        split_dates = {"discovery": all_days}
-        split_summary = [{
-            "split": "discovery",
-            "events": len(events),
-            "warning": "Exploratory 2026 evidence only; not untouched validation.",
-        }]
-        for event in events:
-            event["split"] = "discovery"
-
-        load_start = scan_start - timedelta(days=prior_days + 1)
-        load_end = scan_end + timedelta(days=1)
+        snapshots = self.db.select_all(
+            "binance_symbol_snapshots",
+            filters={"scan_id": f"eq.{scan_id}", "selected_canonical": "eq.true"},
+            order="symbol.asc",
+        )
+        if not snapshots:
+            raise RuntimeError("Source scan has no canonical symbol snapshot")
+        universe_by_symbol = {str(row["symbol"]): row for row in snapshots}
         events_by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for event in events:
+            event["split"] = "discovery"
             events_by_symbol[str(event["symbol"])].append(event)
+        all_symbols = sorted(universe_by_symbol)
+        all_days = {
+            scan_start + timedelta(days=offset)
+            for offset in range((scan_end - scan_start).days)
+        }
 
         self.db.update(
             "binance_chatgpt_export_jobs",
             {"id": f"eq.{job_id}"},
             {
                 "events_total": len(events),
-                "symbols_total": len(events_by_symbol),
+                "symbols_total": len(all_symbols),
                 "heartbeat_at": datetime.now(timezone.utc).isoformat(),
             },
         )
 
+        load_start = scan_start - timedelta(days=prior_days + 1)
+        load_end = scan_end + timedelta(days=1)
         work = Path(tempfile.mkdtemp(prefix=f"chatgpt-export-{job_id}-", dir=self.temp_root))
-        split_dirs = {split: work / split for split in EXPORT_SPLITS}
-        for split, folder in split_dirs.items():
-            (folder / "minute_data").mkdir(parents=True, exist_ok=True)
-            (folder / "reference_data").mkdir(parents=True, exist_ok=True)
-            _write_data_dictionary(folder / "DATA_DICTIONARY.md")
-            _write_analysis_loader(folder / "analysis_loader.py")
+        staging = work / "staging"
+        minute_dir = staging / "minute_data"
+        minute_dir.mkdir(parents=True, exist_ok=True)
+        dictionary_path = staging / "DATA_DICTIONARY.md"
+        loader_path = staging / "analysis_loader.py"
+        _write_data_dictionary(dictionary_path)
+        _write_analysis_loader(loader_path)
 
-        sample_rows: dict[str, list[dict[str, Any]]] = {split: [] for split in EXPORT_SPLITS}
+        sample_rows: list[dict[str, Any]] = []
         source_manifest: list[dict[str, Any]] = []
         issues: list[dict[str, Any]] = []
         rejections: Counter[str] = Counter()
         used_baselines: Counter[tuple[str, datetime]] = Counter()
-        split_ranges: dict[str, list[datetime]] = {split: [] for split in EXPORT_SPLITS}
+        symbol_files: dict[str, Path] = {}
+        symbol_audit: dict[str, dict[str, Any]] = {}
         failures = 0
-        controls_created = 0
+        same_controls_created = 0
+        background_created = 0
         minute_rows = 0
 
         try:
-            processed = 0
-            for symbol, symbol_events in sorted(events_by_symbol.items()):
-                per_split_frames: dict[str, list[pd.DataFrame]] = {split: [] for split in EXPORT_SPLITS}
+            for processed, symbol in enumerate(all_symbols, start=1):
+                self._assert_active(job_id)
+                symbol_info = universe_by_symbol[symbol]
+                symbol_events = events_by_symbol.get(symbol, [])
+                frames: list[pd.DataFrame] = []
+                audit = {
+                    "symbol": symbol,
+                    "base_asset": symbol_info.get("base_asset"),
+                    "quote_asset": symbol_info.get("quote_asset"),
+                    "status": symbol_info.get("status"),
+                    "stablecoin_like": bool(symbol_info.get("stablecoin_like")),
+                    "leveraged_token_like": bool(symbol_info.get("leveraged_token_like")),
+                    "event_count": len(symbol_events),
+                    "same_coin_controls": 0,
+                    "full_universe_backgrounds": 0,
+                    "minute_file_exported": False,
+                    "export_status": "pending",
+                }
                 try:
                     loaded = self.cache.load_symbol(symbol, load_start, load_end)
                     frame = loaded.frame
@@ -315,8 +554,8 @@ class ChatGPTResearchExporter:
                             parse_datetime(item["baseline_time"]),
                             parse_datetime(item.get("first_cross_time") or item["first_cross_trade_time"]),
                         ])
+
                     for event in symbol_events:
-                        split = str(event["split"])
                         baseline = parse_datetime(event["baseline_time"])
                         cross = parse_datetime(event.get("first_cross_time") or event["first_cross_trade_time"])
                         valid, quality = _history_quality(frame, baseline, prior_days)
@@ -336,8 +575,9 @@ class ChatGPTResearchExporter:
                             "control_id": None,
                             "control_rank": None,
                             "sample_type": "event",
+                            "control_scope": "event",
                             "label": 1,
-                            "split": split,
+                            "split": "discovery",
                             "symbol": symbol,
                             "minute_data_file": f"minute_data/{safe_filename(symbol)}.parquet",
                             "base_asset": event.get("base_asset"),
@@ -360,8 +600,8 @@ class ChatGPTResearchExporter:
                         }
                         controls, rejected = select_local_low_controls_for_event(
                             event=event,
-                            split=split,
-                            split_dates=split_dates[split],
+                            split="discovery",
+                            split_dates=all_days,
                             frame=frame,
                             known_event_times=known_times,
                             controls_per_event=controls_per_event,
@@ -372,17 +612,7 @@ class ChatGPTResearchExporter:
                             used_baselines=used_baselines,
                         )
                         rejections.update(rejected)
-                        # Never reuse one control baseline across matched groups in the research export.
                         controls = [row for row in controls if int(row.get("prior_global_reuse_count") or 0) == 0]
-                        if not controls:
-                            issues.append({
-                                "chatgpt_export_job_id": job_id,
-                                "symbol": symbol,
-                                "stage": "control_matching",
-                                "message": f"{event['id']}: no scanner-equivalent controls",
-                            })
-                            continue
-
                         samples = [event_sample]
                         for control in controls:
                             control_baseline = parse_datetime(control["baseline_time"])
@@ -393,9 +623,10 @@ class ChatGPTResearchExporter:
                                 "event_id": control["event_id"],
                                 "control_id": control["control_id"],
                                 "control_rank": control["control_rank"],
-                                "sample_type": "control",
+                                "sample_type": "same_coin_control",
+                                "control_scope": "same_coin",
                                 "label": 0,
-                                "split": split,
+                                "split": "discovery",
                                 "symbol": symbol,
                                 "minute_data_file": f"minute_data/{safe_filename(symbol)}.parquet",
                                 "base_asset": control.get("base_asset"),
@@ -416,123 +647,164 @@ class ChatGPTResearchExporter:
                                 "duration_difference_minutes": control["duration_difference_minutes"],
                                 **control_quality,
                             })
-                        # Keep the event only when at least one valid control exists.
+                        if not controls:
+                            issues.append({
+                                "chatgpt_export_job_id": job_id,
+                                "symbol": symbol,
+                                "stage": "control_matching",
+                                "message": f"{event['id']}: no scanner-equivalent same-coin controls; event retained for cross-universe analysis",
+                            })
                         for sample in samples:
-                            baseline_value = parse_datetime(sample["baseline_time"])
                             raw, raw_quality = extract_raw_window(
                                 frame,
-                                baseline_value,
+                                parse_datetime(sample["baseline_time"]),
                                 prior_days=prior_days,
                                 include_baseline_bar=include_baseline_bar,
                                 sample_id=str(sample["sample_id"]),
                             )
                             sample.update(raw_quality)
-                            sample_rows[split].append(sample)
-                            per_split_frames[split].append(raw)
-                            split_ranges[split].extend([parse_datetime(raw_quality["history_start"]), parse_datetime(raw_quality["history_end"])])
-                        controls_created += len(controls)
+                            sample_rows.append(sample)
+                            frames.append(raw)
+                        same_controls_created += len(controls)
+                        audit["same_coin_controls"] += len(controls)
 
-                    for split, frames in per_split_frames.items():
-                        if not frames:
-                            continue
+                    backgrounds, rejected = select_universe_background_samples(
+                        symbol_info=symbol_info,
+                        frame=frame,
+                        scan_start=scan_start,
+                        scan_end_exclusive=scan_end,
+                        known_event_times=known_times,
+                        prior_days=prior_days,
+                        threshold_pct=threshold_pct,
+                        window_minutes=window_minutes,
+                        used_baselines=used_baselines,
+                        count=BACKGROUND_SAMPLES_PER_SYMBOL,
+                    )
+                    rejections.update(rejected)
+                    for sample in backgrounds:
+                        raw, raw_quality = extract_raw_window(
+                            frame,
+                            parse_datetime(sample["baseline_time"]),
+                            prior_days=prior_days,
+                            include_baseline_bar=include_baseline_bar,
+                            sample_id=str(sample["sample_id"]),
+                        )
+                        sample.update(raw_quality)
+                        sample_rows.append(sample)
+                        frames.append(raw)
+                    background_created += len(backgrounds)
+                    audit["full_universe_backgrounds"] = len(backgrounds)
+                    if not backgrounds:
+                        issues.append({
+                            "chatgpt_export_job_id": job_id,
+                            "symbol": symbol,
+                            "stage": "full_universe_background",
+                            "message": "No complete uncontaminated deterministic background window found",
+                        })
+
+                    if frames:
                         sample_windows = pd.concat(frames, ignore_index=True)
-                        # Store each physical market minute once. samples.csv contains the
-                        # history bounds needed to reconstruct every labelled sample.
                         symbol_frame = (
                             sample_windows.drop(columns=["sample_id", "relative_minute"])
                             .sort_values("open_time")
                             .drop_duplicates("open_time", keep="last")
                             .reset_index(drop=True)
                         )
-                        destination = split_dirs[split] / "minute_data" / f"{safe_filename(symbol)}.parquet"
+                        destination = minute_dir / f"{safe_filename(symbol)}.parquet"
                         symbol_frame.to_parquet(destination, index=False, compression="zstd")
+                        symbol_files[symbol] = destination
                         minute_rows += len(symbol_frame)
+                        audit["minute_file_exported"] = True
+                    audit["export_status"] = "ok" if frames else "daily_only"
                 except Exception as exc:
                     failures += 1
+                    audit["export_status"] = "failed"
+                    audit["error"] = str(exc)[:1000]
                     issues.append({
                         "chatgpt_export_job_id": job_id,
                         "symbol": symbol,
                         "stage": "symbol_export",
                         "message": str(exc)[:4000],
                     })
-                processed += 1
+                symbol_audit[symbol] = audit
                 self.db.update(
                     "binance_chatgpt_export_jobs",
                     {"id": f"eq.{job_id}"},
                     {
                         "symbols_processed": processed,
-                        "samples_exported": sum(len(rows) for rows in sample_rows.values()),
-                        "controls_created": controls_created,
+                        "samples_exported": len(sample_rows),
+                        "controls_created": same_controls_created + background_created,
                         "minute_rows_exported": minute_rows,
                         "failures": failures,
                         "heartbeat_at": datetime.now(timezone.utc).isoformat(),
                     },
                 )
 
-            # Export independent raw market references for each chronological split.
-            for split in EXPORT_SPLITS:
-                if not split_ranges[split]:
-                    continue
-                ref_start = min(split_ranges[split]).date()
-                ref_end = max(split_ranges[split]).date() + timedelta(days=1)
-                for reference_symbol in REFERENCE_SYMBOLS:
-                    try:
-                        loaded = self.cache.load_symbol(reference_symbol, ref_start, ref_end)
-                        source_manifest.extend(loaded.source_manifest)
-                        ref = loaded.frame.reset_index()
-                        ref.insert(0, "symbol", reference_symbol)
-                        ref = ref[["symbol", "open_time", *RAW_COLUMNS, "observed"]]
-                        destination = split_dirs[split] / "reference_data" / f"{reference_symbol}.parquet"
-                        ref.to_parquet(destination, index=False, compression="zstd")
-                    except Exception as exc:
-                        failures += 1
-                        issues.append({
-                            "chatgpt_export_job_id": job_id,
-                            "symbol": reference_symbol,
-                            "stage": f"{split}_reference_export",
-                            "message": str(exc)[:4000],
-                        })
+            self._assert_active(job_id)
+            samples_frame = pd.DataFrame(sample_rows)
+            if samples_frame.empty:
+                raise RuntimeError("No raw samples could be exported")
 
-            if issues:
-                self.db.insert("binance_chatgpt_export_issues", issues)
+            reference_dir = work / "universe_reference"
+            (reference_dir / "reference_data").mkdir(parents=True, exist_ok=True)
+            for reference_symbol in REFERENCE_SYMBOLS:
+                loaded = self.cache.load_symbol(reference_symbol, load_start, scan_end)
+                source_manifest.extend(loaded.source_manifest)
+                ref = loaded.frame.reset_index()
+                ref.insert(0, "symbol", reference_symbol)
+                ref = ref[["symbol", "open_time", *RAW_COLUMNS, "observed"]]
+                ref.to_parquet(
+                    reference_dir / "reference_data" / f"{reference_symbol}.parquet",
+                    index=False,
+                    compression="zstd",
+                )
+
+            daily_rows = self.db.select_all(
+                "binance_daily_bars",
+                filters={"scan_id": f"eq.{scan_id}"},
+                order="symbol.asc,open_time.asc",
+            )
+            daily_frame = pd.DataFrame(daily_rows)
+            if not daily_frame.empty:
+                for column in (
+                    "open", "high", "low", "close", "volume", "quote_volume",
+                    "taker_buy_base_volume", "taker_buy_quote_volume",
+                ):
+                    if column in daily_frame:
+                        daily_frame[column] = pd.to_numeric(daily_frame[column], errors="coerce")
+                daily_frame.to_parquet(
+                    reference_dir / "universe_daily_data.parquet",
+                    index=False,
+                    compression="zstd",
+                )
+            universe_frame = pd.DataFrame([symbol_audit[symbol] for symbol in all_symbols])
+            universe_frame.to_csv(reference_dir / "universe_symbols.csv", index=False)
+            (reference_dir / "README.md").write_text(
+                "# Full-universe 2026 reference package\n\n"
+                "Contains every canonical Binance Spot symbol from the source scan, full-universe daily bars, "
+                "and raw BTC/ETH/BNB one-minute references. Symbols without a complete raw background window "
+                "remain listed with their export status.\n",
+                encoding="utf-8",
+            )
 
             file_records: list[dict[str, Any]] = []
             checksums: list[dict[str, Any]] = []
-            split_output_names = {
-                "discovery": "DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip",
-            }
-            split_summaries: list[dict[str, Any]] = []
-            for split in EXPORT_SPLITS:
-                folder = split_dirs[split]
-                rows = sample_rows[split]
-                samples_frame = pd.DataFrame(rows)
-                samples_frame.to_csv(folder / "samples.csv", index=False)
-                metadata = {
-                    "protocol_version": PROTOCOL_VERSION,
-                    "split": split,
-                    "source_scan_id": scan_id,
-                    "event_definition": ">=50% low-to-later-high rise within 480 minutes; saleability proven",
-                    "controls": "same symbol, same 2026 discovery pool, same scanner-equivalent local-low algorithm, no future 50% contamination",
-                    "prior_days": prior_days,
-                    "include_baseline_bar": include_baseline_bar,
-                    "samples": len(rows),
-                    "events": sum(1 for row in rows if row["label"] == 1),
-                    "controls": sum(1 for row in rows if row["label"] == 0),
-                    "warning": (
-                        "This entire 2026 package is exploratory discovery evidence. "
-                        "Fresh validation and sealed evidence must be collected from separate periods."
-                    ),
-                }
-                (folder / "split_metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-                (folder / "README.md").write_text(
-                    "# 2026 exploratory discovery evidence package\n\n"
-                    "This package contains raw one-minute evidence and sample labels. The app has not selected a predictor or trading rule.\n\n"
-                    "Upload this package to ChatGPT for blank-canvas discovery. It is exploratory only; do not use it as untouched validation.\n",
-                    encoding="utf-8",
-                )
-                zip_name = split_output_names[split]
+            chunk_manifest: list[dict[str, Any]] = []
+            chunks = _chunk_symbols(symbol_files, CHUNK_TARGET_BYTES)
+            for part_number, symbols in enumerate(chunks, start=1):
+                self._assert_active(job_id)
+                zip_name = f"DISCOVERY_2026_SYMBOLS_PART_{part_number:03d}.zip"
                 zip_path = work / zip_name
-                _zip_directory(folder, zip_path)
+                chunk_meta = _write_symbol_chunk(
+                    zip_path,
+                    symbols=symbols,
+                    symbol_files=symbol_files,
+                    samples=samples_frame,
+                    dictionary_path=dictionary_path,
+                    loader_path=loader_path,
+                    part_number=part_number,
+                    total_parts=len(chunks),
+                )
                 storage_path = f"chatgpt-research/{job_id}/{zip_name}"
                 self.db.upload_file(storage_path, zip_path, "application/zip")
                 record = {
@@ -542,16 +814,43 @@ class ChatGPTResearchExporter:
                     "size_bytes": zip_path.stat().st_size,
                     "sha256": sha256_file(zip_path),
                     "content_type": "application/zip",
-                    "role": f"neutral_raw_{split}",
-                    "split": split,
+                    "role": "neutral_full_universe_symbol_chunk",
+                    "split": "discovery",
                 }
                 file_records.append(record)
                 checksums.append({"filename": zip_name, "sha256": record["sha256"], "size_bytes": record["size_bytes"]})
-                split_summaries.append(metadata | {"filename": zip_name, "size_bytes": zip_path.stat().st_size})
+                chunk_manifest.append(chunk_meta | {
+                    "filename": zip_name,
+                    "size_bytes": record["size_bytes"],
+                    "first_symbol": symbols[0],
+                    "last_symbol": symbols[-1],
+                })
+                zip_path.unlink(missing_ok=True)
 
+            reference_zip = work / "DISCOVERY_2026_UNIVERSE_REFERENCE.zip"
+            _zip_directory(reference_dir, reference_zip)
+            reference_storage = f"chatgpt-research/{job_id}/{reference_zip.name}"
+            self.db.upload_file(reference_storage, reference_zip, "application/zip")
+            reference_record = {
+                "chatgpt_export_job_id": job_id,
+                "storage_path": reference_storage,
+                "filename": reference_zip.name,
+                "size_bytes": reference_zip.stat().st_size,
+                "sha256": sha256_file(reference_zip),
+                "content_type": "application/zip",
+                "role": "neutral_full_universe_reference",
+                "split": "discovery",
+            }
+            file_records.append(reference_record)
+            checksums.append({"filename": reference_zip.name, "sha256": reference_record["sha256"], "size_bytes": reference_record["size_bytes"]})
+
+            if issues:
+                self.db.insert("binance_chatgpt_export_issues", issues)
             index_dir = work / "index"
             index_dir.mkdir()
-            pd.DataFrame(split_summaries).to_csv(index_dir / "split_summary.csv", index=False)
+            samples_frame.to_csv(index_dir / "all_samples.csv", index=False)
+            universe_frame.to_csv(index_dir / "universe_symbols.csv", index=False)
+            pd.DataFrame(chunk_manifest).to_csv(index_dir / "chunk_manifest.csv", index=False)
             manifest_frame = pd.DataFrame(source_manifest)
             if not manifest_frame.empty:
                 dedupe_columns = [
@@ -566,24 +865,33 @@ class ChatGPTResearchExporter:
                 [{"rejection_reason": key, "count": value} for key, value in rejections.most_common()]
             ).to_csv(index_dir / "control_rejections.csv", index=False)
             pd.DataFrame(checksums).to_csv(index_dir / "package_checksums.csv", index=False)
-            (index_dir / "research_index.json").write_text(json.dumps({
+            result = {
                 "protocol_version": PROTOCOL_VERSION,
                 "source_scan_id": scan_id,
                 "source_window": {"start": scan_start.isoformat(), "end_exclusive": scan_end.isoformat()},
                 "event_definition": "saleable >=50% rise within eight hours",
-                "research_design": "neutral raw-data export for ChatGPT-led pattern discovery",
+                "research_design": "neutral full-universe raw-data export for ChatGPT-led discovery",
+                "canonical_symbols": len(all_symbols),
+                "symbols_processed": len(all_symbols),
+                "event_bearing_symbols": len(events_by_symbol),
+                "non_event_symbols": len(all_symbols) - len(events_by_symbol),
                 "events_source": len(events),
-                "samples_exported": sum(len(rows) for rows in sample_rows.values()),
-                "controls_created": controls_created,
+                "events_exported": int((samples_frame["label"] == 1).sum()),
+                "same_coin_controls_created": same_controls_created,
+                "full_universe_backgrounds_created": background_created,
+                "controls_created": same_controls_created + background_created,
+                "samples_exported": len(samples_frame),
                 "minute_rows_exported": minute_rows,
+                "symbol_chunk_count": len(chunks),
                 "failures": failures,
-                "split_summary": split_summaries,
                 "hard_rule_status": "none; the app exports evidence only",
-            }, indent=2), encoding="utf-8")
+                "warning": "All 2026 evidence is exploratory discovery data.",
+            }
+            (index_dir / "research_index.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
             (index_dir / "README.md").write_text(
-                "# ChatGPT research export index\n\n"
-                "Download `DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip` and upload it to ChatGPT together with this index. "
-                "All 2026 evidence is exploratory; fresh validation and sealed evidence will be collected separately.\n",
+                "# ChatGPT full-universe research index\n\n"
+                "Upload this index, `DISCOVERY_2026_UNIVERSE_REFERENCE.zip`, and every "
+                "`DISCOVERY_2026_SYMBOLS_PART_*.zip` file to ChatGPT. The app selected no predictor or rule.\n",
                 encoding="utf-8",
             )
             index_zip = work / "CHATGPT_RESEARCH_INDEX.zip"
@@ -606,18 +914,8 @@ class ChatGPTResearchExporter:
                 file_records,
                 on_conflict="chatgpt_export_job_id,storage_path",
             )
-            result = {
-                "events_source": len(events),
-                "samples_exported": sum(len(rows) for rows in sample_rows.values()),
-                "controls_created": controls_created,
-                "minute_rows_exported": minute_rows,
-                "symbols_processed": len(events_by_symbol),
-                "failures": failures,
-                "split_summary": split_summaries,
-                "index_storage_path": index_storage,
-            }
-            # The official archives are only a resumable cache. Supabase contains
-            # the durable packages, so remove V10's private cache after success.
+            result["index_storage_path"] = index_storage
+            self._assert_active(job_id)
             shutil.rmtree(self.cache_root, ignore_errors=True)
             return result
         finally:
