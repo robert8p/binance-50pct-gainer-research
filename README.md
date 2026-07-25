@@ -1,70 +1,56 @@
-# Binance Momentum Continuation Backtest — V9.0.0
+# Binance ChatGPT Research Exporter — V10.0.0
 
-V9 performs the final OHLCV-only research test in this programme.
+V10 corrects the division of labour in this research programme.
 
-It does **not** try to predict the beginning of a 50% surge. H1, H2 and H3 are retired. Instead, V9 asks whether the previously frozen late-momentum condition can still produce a repeatable continuation profit when evaluated continuously across Binance Spot history.
+The app is now **research infrastructure only**. It:
 
-## Frozen signal
+- scans Binance Spot for saleable coins that rose at least 50% within eight hours;
+- selects fair same-coin non-event controls using the scanner's identical rolling-local-low algorithm;
+- downloads ten days of raw one-minute Binance data before each event/control baseline;
+- adds raw BTC, ETH and BNB reference series;
+- partitions evidence chronologically into discovery, validation and sealed test;
+- verifies source files and exports neutral Parquet packages.
 
-After every completed one-minute bar, the coin signals when recent five-minute quote volume is at least 500 quote units and at least three of these four conditions pass:
+The app does **not** choose a pattern, calculate a preferred signal, optimise thresholds or simulate a trade. ChatGPT performs those tasks from the discovery package.
 
-1. 15-minute return is at least 0.9%.
-2. 15-minute quote volume is at least 12 times its median at the same UTC time over the preceding seven days, with at least five reference days.
-3. Price is at least 74% of the way from its 24-hour low to its 24-hour high.
-4. Maximum low-to-later-high run-up during the latest 15 minutes is at least 3.3%.
+## Frozen V10 evidence window
 
-## Frozen historical test
+V10 is fixed to a fresh 180-day period:
 
-- Window: 1 July 2025 to 1 November 2025, end exclusive
-- Canonical pair preference: USDT, then USDC, then FDUSD
-- Current-tradeable Binance Spot universe
-- Position: 500 quote units
-- Entry: aggregate buyer-initiated executions beginning after the completed signal minute
-- Entry fill window: 60 seconds
-- Take profit: +10%
-- Stop loss: -5%
-- Maximum hold: three hours
-- Exit: seller-initiated aggregate executions
-- Exit fill window: five minutes
-- Fees: 0.10% per side
-- Same-coin cooldown: three hours after exit or failed execution
-- Maximum filled entries: five per UTC day
+- start inclusive: `2025-01-01`
+- end exclusive: `2025-06-30`
 
-All parameters and dates are fixed in code and in `docs/V9_PREREGISTERED_PROTOCOL.json`.
+This prevents the already-opened 2025–2026 research periods from being silently recycled as new evidence.
 
-## Graduation standard
+## Output files
 
-V9 passes only if every frozen condition passes, including:
+- `CHATGPT_RESEARCH_INDEX.zip` — manifests, checksums, exclusions and split counts.
+- `DISCOVERY_UPLOAD_TO_CHATGPT.zip` — raw labelled discovery evidence; upload this to ChatGPT.
+- `VALIDATION_DO_NOT_OPEN.zip` — keep closed until ChatGPT freezes candidate rules and acceptance criteria.
+- `SEALED_TEST_DO_NOT_OPEN.zip` — keep closed until a final rule survives validation without retuning.
 
-- at least 100 completed trades and 20 coins;
-- positive net P&L;
-- at least 1 quote unit of average net profit per trade;
-- profit factor of at least 1.25;
-- maximum drawdown no greater than 1,500 quote units on a simulated 10,000-unit starting equity;
-- no more than ten consecutive losses;
-- no coin contributing more than 15% of trades;
-- at least 20 trades and positive expectancy in each chronological third;
-- positive lower bound of the 95% coin-cluster bootstrap interval for expectancy;
-- at least 95% mean minute-archive coverage;
-- signal-generation failure rate no higher than 5% of the universe.
+Each evidence package contains:
 
-A pass permits a separate implementation and robustness review. It does not initiate live trading. A fail retires this OHLCV-only Binance surge programme without retuning.
+- `samples.csv` — labels and sample metadata;
+- `minute_data/*.parquet` — deduplicated raw one-minute symbol histories covering every sample window;
+- `reference_data/*.parquet` — raw BTCUSDT, ETHUSDT and BNBUSDT data;
+- `analysis_loader.py` — a neutral sample-window loader;
+- `DATA_DICTIONARY.md` and split metadata.
 
-## Output package
+## Research integrity
 
-`continuous_backtest_results.zip` contains:
+Events and controls use the same local-low selection algorithm. Controls are rejected if they contain a future 50% eight-hour rise, occur near another known event, lack complete history or reuse a control baseline.
 
-- `backtest_results.json`
-- `backtest_protocol.json`
-- `candidate_signals.csv`
-- `executed_trades.csv`
-- `performance_by_chronological_third.csv`
-- `performance_by_month.csv`
-- `performance_by_symbol.csv`
-- `daily_performance.csv`
-- `minute_data_coverage.csv`
-- `aggregate_trade_coverage.csv`
+The exact contract is in `docs/V10_RESEARCH_EXPORT_PROTOCOL.json`.
 
-## Material limitation
+## Deployment
 
-The historical universe begins with coins tradeable on Binance when V9 is run. Historically delisted coins are absent, so survivorship bias remains. The result must be interpreted with that limitation even if every formal criterion passes.
+Existing users should run `supabase/migrate_v9_to_v10.sql`, upload the V10 repository files and wait for both Render services to redeploy.
+
+After `/health` shows version `10.0.0`:
+
+1. Queue the fixed 2025-01-01 to 2025-06-30 eight-hour scan.
+2. Select that completed scan under the neutral ChatGPT export section.
+3. Queue the export once.
+4. Download the index and discovery packages only.
+5. Upload those two packages to ChatGPT for blank-canvas pattern analysis.

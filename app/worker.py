@@ -12,6 +12,7 @@ from .context import TenDayContextBuilder
 from .baseline_context import BaselineContextBuilder
 from .confirmation import FreshConfirmationBuilder
 from .backtest import ContinuousBacktestBuilder
+from .chatgpt_export import ChatGPTResearchExporter
 from .scanner import Scanner
 from .supabase import SupabaseClient
 
@@ -39,7 +40,7 @@ def _claim(db: SupabaseClient, table: str) -> dict | None:
 
 def _recover_interrupted_jobs(db: SupabaseClient) -> None:
     """Requeue jobs left running by a worker restart; all writes are idempotent."""
-    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs", "binance_baseline_context_jobs", "binance_confirmation_jobs", "binance_backtest_jobs"):
+    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs", "binance_baseline_context_jobs", "binance_confirmation_jobs", "binance_backtest_jobs", "binance_chatgpt_export_jobs"):
         db.update(
             table,
             {"status": "eq.running"},
@@ -63,6 +64,7 @@ def main() -> None:
     baseline_context_builder = BaselineContextBuilder(db, binance, settings.temp_data_dir)
     confirmation_builder = FreshConfirmationBuilder(db, binance, settings.temp_data_dir)
     backtest_builder = ContinuousBacktestBuilder(db, binance, settings.temp_data_dir)
+    chatgpt_exporter = ChatGPTResearchExporter(db, binance, settings.temp_data_dir)
     _recover_interrupted_jobs(db)
     logger.info("Worker started; interrupted jobs recovered")
     while True:
@@ -238,6 +240,38 @@ def main() -> None:
                     logger.exception("Fresh confirmation job failed")
                     db.update(
                         "binance_confirmation_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "failed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "error_message": str(exc)[:4000],
+                        },
+                    )
+                continue
+
+            chatgpt_export_job = _claim(db, "binance_chatgpt_export_jobs")
+            if chatgpt_export_job:
+                job_id = chatgpt_export_job["id"]
+                try:
+                    result = chatgpt_exporter.run(chatgpt_export_job)
+                    db.update(
+                        "binance_chatgpt_export_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "completed_with_warnings" if result.get("failures", 0) else "completed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "symbols_processed": result["symbols_processed"],
+                            "samples_exported": result["samples_exported"],
+                            "controls_created": result["controls_created"],
+                            "minute_rows_exported": result["minute_rows_exported"],
+                            "failures": result["failures"],
+                            "result_json": result,
+                        },
+                    )
+                except Exception as exc:
+                    logger.exception("ChatGPT research-export job failed")
+                    db.update(
+                        "binance_chatgpt_export_jobs",
                         {"id": f"eq.{job_id}"},
                         {
                             "status": "failed",

@@ -1,43 +1,62 @@
-# Data contract — V8.0.0
+# Data contract — V10.0.0
+
+## Purpose
+
+V10 exports neutral raw evidence for ChatGPT-led pattern discovery. It does not contain a preferred predictor, model or trade rule.
 
 ## Event definition
 
 A saleable event is a later one-minute high at least 50% above the latest occurrence of the lowest prior-minute low in the scanner's conservative 480-minute rolling window, with at least 500 quote units of seller-initiated executions within five minutes after the exact crossing trade.
 
-## V8 confirmation population
+## Control definition
 
-Each event is paired with up to five same-symbol controls. At a matched pseudo-cross time, the control baseline is selected using the identical scanner algorithm:
+Each event is paired with up to five same-symbol controls from the same chronological split. At a candidate pseudo-cross minute, the control baseline is selected using the identical scanner algorithm:
 
 - inspect the prior 479 completed minute bars;
 - identify the minimum low;
 - choose the latest equal occurrence;
-- reject if the selected baseline rises 50% within the next 479 later minute bars;
+- reject if the selected baseline rises 50% within the following 480-minute window;
+- reject timestamps or baselines within 24 hours of a known same-symbol event;
 - require the same event-duration band;
-- require complete ten-day history and five-minute liquidity of at least 500 quote units.
+- require substantially complete ten-day history;
+- do not reuse a control baseline in another matched group.
 
-## Frozen H3 signal
+## Sample metadata
 
-```text
-volatility_1d_to_7d_ratio >= 0.4
-AND ret_prior_1d_to_7d_pct <= 5
-```
+`samples.csv` contains one row per labelled event or control, including:
 
-## Confirmation outputs
+- `sample_id` and `match_group_id`;
+- `label` and `sample_type`;
+- symbol, base asset and quote asset;
+- baseline and crossing/pseudo-cross timestamps;
+- ten-day history start and end;
+- event and selected-baseline duration bands;
+- matching diagnostics;
+- explicitly prefixed `outcome_` fields.
 
-`fresh_confirmation_results.zip` contains:
+## Raw minute data
 
-- `fresh_confirmation_results.csv`
-- `duration_band_results.csv`
-- `fresh_confirmation_population.csv`
-- `algorithmic_local_low_controls.csv`
-- `control_rejections.csv`
-- `source_manifest.csv`
-- `split_summary.csv`
-- `confirmation_decision.json`
-- `V8_PREREGISTERED_PROTOCOL.json`
+`minute_data/*.parquet` stores each physical symbol/time row once. Fields are:
 
-## Backtest protocol
+- open time;
+- OHLC;
+- base and quote volume;
+- trade count;
+- taker-buy base and quote volume;
+- observed-data flag.
 
-Protocol: `v8_h3_continuous_executable_backtest_1`.
+Use `analysis_loader.py` or the bounds in `samples.csv` to reconstruct each sample's ten-day window. Missing bars are retained as missing and are never forward-filled.
 
-H3 arms a symbol for 480 minutes. The unchanged late trigger must occur within the arm window. The trade uses a 500-quote-unit entry, +15% take profit, −5% stop loss, three-hour maximum hold, 0.10% fee per side, three-hour symbol cooldown and five filled entries per UTC day.
+## Reference market data
+
+`reference_data/*.parquet` contains raw BTCUSDT, ETHUSDT and BNBUSDT one-minute series for the relevant split period. The app does not combine or weight these references.
+
+## Partitions
+
+Whole UTC event dates are assigned chronologically:
+
+- discovery: 60%;
+- validation: 20%;
+- sealed test: 20%.
+
+Only discovery should be opened initially. Candidate features, rules and acceptance criteria must be frozen before validation is opened. The sealed test remains closed until one final rule survives validation without retuning.

@@ -3,236 +3,103 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Binance Momentum Continuation Backtest</title>
+  <title>Binance ChatGPT Research Exporter</title>
   <style>
     :root { color-scheme: dark; --bg:#0b0f14; --panel:#141a22; --line:#27303d; --text:#f3f5f7; --muted:#9ba7b4; --accent:#f3ba2f; --good:#65d68a; }
     * { box-sizing:border-box; } body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); }
-    main { max-width:1280px; margin:auto; padding:32px 20px 60px; } h1 { margin:0 0 8px; font-size:32px; } h2 { margin-top:0; }
-    .muted { color:var(--muted); } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; margin:22px 0; }
+    main { max-width:1220px; margin:auto; padding:32px 20px 60px; } h1 { margin:0 0 8px; font-size:32px; } h2 { margin-top:0; }
+    .muted { color:var(--muted); } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:18px; margin:22px 0; }
     .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 12px 30px rgba(0,0,0,.18); margin-top:18px; }
     label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; } input,select { width:100%; padding:11px; border-radius:9px; border:1px solid var(--line); background:#0d1218; color:var(--text); }
-    .check { display:flex; gap:9px; align-items:center; margin:10px 0; } .check input { width:auto; } button { margin-top:14px; background:var(--accent); color:#17130a; border:0; padding:11px 16px; border-radius:9px; font-weight:750; cursor:pointer; }
+    button { margin-top:14px; background:var(--accent); color:#17130a; border:0; padding:11px 16px; border-radius:9px; font-weight:750; cursor:pointer; }
     table { width:100%; border-collapse:collapse; font-size:13px; } th,td { text-align:left; border-bottom:1px solid var(--line); padding:10px 8px; vertical-align:top; } th { color:var(--muted); font-weight:600; }
     a { color:#ffd86b; } .status { font-weight:700; } .warning { border-left:4px solid var(--accent); padding-left:12px; } .good { color:var(--good); }
     .scroll { overflow:auto; } code { color:#fbd77d; } .small { font-size:12px; }
   </style>
 </head>
 <body><main>
-  <h1>Binance Momentum Continuation Backtest</h1>
-  <p class="muted">v9.0 performs the final OHLCV-only test: the frozen late-momentum trigger is evaluated after every completed one-minute bar, with realistic aggregate-trade entry and exit reconstruction.</p>
-  <p class="warning">A qualifying event is the earliest later-minute high at least 50% above a prior-minute low within a conservative eight-hour rolling window. The price only needs to touch the threshold.</p>
-  <p class="warning">“Saleable” means at least 500 quote units of seller-initiated trades executed at any price during the five minutes after the exact crossing trade. It does not guarantee a fill at the threshold.</p>
+  <h1>Binance ChatGPT Research Exporter</h1>
+  <p class="muted">v10.0 keeps the app in its proper role: it collects, cleans, matches and partitions the evidence. ChatGPT—not the app—will generate features, search for patterns and formulate candidate rules.</p>
+  <p class="warning">V9’s hard-coded momentum backtest is retired and disabled. V10 contains no preferred predictor, signal threshold, profit target or trading rule.</p>
 
   <div class="grid">
     <section class="card">
-      <h2>Step 1 — Queue discovery scan</h2>
+      <h2>Step 1 — Build a fresh 8-hour event scan</h2>
       <form method="post" action="/scans">
-        <label>Lookback, completed UTC days</label><input name="lookback_days" type="number" value="60" min="1" max="180">
-        <label>Optional historical start date (UTC, inclusive)</label><input name="window_start_date" type="date">
-        <label>Optional historical end date (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date">
-        <p class="muted small">Leave both dates blank for the latest 60 days. For a fresh earlier round, enter both dates; maximum span 180 days.</p>
-        <label>Threshold increase (%)</label><input name="threshold_pct" type="number" value="50" step="0.1">
-        <label>Rolling increase window</label><input value="8 hours (480 minutes)" disabled>
-        <label>Canonical quote preference</label><input name="quote_assets" value="USDT,USDC,FDUSD">
-        <label>Minimum executed seller-side exit notional</label><input name="min_exit_notional" type="number" value="500" step="1">
-        <label>Saleability window after crossing (seconds)</label><input name="confirmation_window_seconds" type="number" value="300" min="30" max="3600">
-        <button>Queue scan</button>
+        <label>Historical start date (UTC, inclusive)</label><input name="window_start_date" type="date" value="2025-01-01" required>
+        <label>Historical end date (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2025-06-30" required>
+        <p class="muted small">This is a 180-day historical window. Use a period whose raw event/control evidence has not previously been examined.</p>
+        <input name="lookback_days" type="hidden" value="60">
+        <label>Event definition</label><input value="Saleable ≥50% rise within 8 hours" disabled>
+        <input name="threshold_pct" type="hidden" value="50">
+        <input name="quote_assets" type="hidden" value="USDT,USDC,FDUSD">
+        <input name="min_exit_notional" type="hidden" value="500">
+        <input name="confirmation_window_seconds" type="hidden" value="300">
+        <button>Queue fresh scan</button>
       </form>
     </section>
 
     <section class="card">
-      <h2>Step 2 — Build positive-event archive</h2>
-      <form method="post" action="/research">
-        <label>Completed source scan</label><select name="scan_id" required>
-          {% for scan in completed_scans %}<option value="{{ scan.id }}">{{ scan.created_at }} — {{ scan.events_found }} saleable — {{ scan.id[:8] }}</option>{% endfor %}
+      <h2>Step 2 — Create neutral ChatGPT evidence packages</h2>
+      <form method="post" action="/chatgpt-export">
+        <label>Completed explicit-date 8-hour scan</label>
+        <select name="scan_id" required>
+          {% for scan in chatgpt_source_scans %}
+          <option value="{{ scan.id }}">{{ scan.window_start_date }} to {{ scan.window_end_date_exclusive }} — {{ scan.events_found or 0 }} saleable events — {{ scan.id[:8] }}</option>
+          {% endfor %}
         </select>
-        <label>Prior complete UTC days</label><input name="prior_days" type="number" value="10" min="1" max="30">
-        <label>Maximum events (1 test; 0 all)</label><input name="maximum_events" type="number" value="1" min="0">
-        <label class="check"><input name="include_1s_klines" type="checkbox" checked> Include 1-second klines</label>
-        <label class="check"><input name="include_agg_trades" type="checkbox" checked> Include aggregate trades</label>
-        <label class="check"><input name="include_raw_trades" type="checkbox"> Include every raw trade — much larger</label>
-        <button>Queue event archive</button>
+        <input name="controls_per_event" type="hidden" value="5">
+        <label>Raw history per sample</label><input value="10 days of one-minute Binance data" disabled>
+        <label>Control method</label><input value="Same coin and split; same scanner local-low algorithm; 5 controls/event" disabled>
+        <label>Chronological partitions</label><input value="60% discovery / 20% validation / 20% sealed test" disabled>
+        <label>Market reference data</label><input value="Raw BTCUSDT, ETHUSDT and BNBUSDT one-minute bars" disabled>
+        <button>Queue neutral research export</button>
       </form>
-    </section>
-
-    <section class="card">
-      <h2>Step 3 — Build matched controls</h2>
-      <form method="post" action="/matched-controls">
-        <label>Completed source scan</label><select name="scan_id" required>
-          {% for scan in completed_scans %}<option value="{{ scan.id }}">{{ scan.created_at }} — {{ scan.events_found }} saleable — {{ scan.id[:8] }}</option>{% endfor %}
-        </select>
-        <label>Same-coin controls per event</label><input name="controls_per_event" type="number" value="5" min="1" max="10">
-        <label>Predictor-history days</label><input name="prior_days" type="number" value="10" min="1" max="30">
-        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120,180,480">
-        <label>Minimum prior 5-minute quote volume for controls</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
-        <button>Queue matched-control package</button>
-      </form>
-      <p class="muted small">Controls use the same symbol and historical split, prefer the same clock time, and exclude windows close to any other 50% crossing. Do not open the sealed-test package before rules are fixed.</p>
-    </section>
-
-    <section class="card">
-      <h2>Step 4 — Build ten-day context</h2>
-      <form method="post" action="/ten-day-context">
-        <label>Completed matched-control job</label><select name="matched_control_job_id" required>
-          {% for job in completed_matched_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — {{ job.controls_created or 0 }} controls — {{ job.id[:8] }}</option>{% endfor %}
-        </select>
-        <label>Research treatment</label><select name="research_mode">
-          <option value="exploratory_reuse">Existing/opened data — exploratory only</option>
-          <option value="fresh_staged">New untouched data — staged discovery/validation/sealed</option>
-        </select>
-        <label>Context history</label><input value="10 days" disabled>
-        <label>Decision horizons, minutes</label><input name="horizons_minutes" value="15,30,60,120,180,480">
-        <label>Minimum prior 5-minute quote volume</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
-        <button>Queue ten-day context package</button>
-      </form>
-      <p class="muted small">V7 only lists eight-hour matched-control jobs. Use exploratory for opened data; use fresh staged only for a genuinely untouched historical scan.</p>
-    </section>
-
-    <section class="card">
-      <h2>Step 5 — Build baseline-aligned context</h2>
-      <form method="post" action="/baseline-context">
-        <label>Completed matched-control job</label><select name="matched_control_job_id" required>
-          {% for job in completed_matched_jobs %}<option value="{{ job.id }}">{{ job.created_at }} — {{ job.controls_created or 0 }} controls — {{ job.id[:8] }}</option>{% endfor %}
-        </select>
-        <label>Research treatment</label><select name="research_mode">
-          <option value="exploratory_reuse">Existing/opened eight-hour data — exploratory alignment audit</option>
-          <option value="fresh_staged">Untouched data ending by 1 Jan 2026 — discovery/validation/sealed</option>
-        </select>
-        <label>Snapshots before baseline</label><input value="10d, 7d, 5d, 3d, 48h, 24h, 12h, 8h, 6h, 3h, 1h, baseline" disabled>
-        <label>Frozen continuation check</label><input value="15 minutes before the +50% crossing" disabled>
-        <label>Minimum prior 5-minute quote volume</label><input name="min_entry_notional" type="number" value="500" min="0" step="1">
-        <button>Queue baseline-aligned package</button>
-      </form>
-      <p class="muted small">Fresh staged mode requires a new V7 scan ending on or before 1 January 2026 and matched controls containing the mandatory 480-minute horizon. Prior three-hour jobs are deliberately excluded.</p>
-    </section>
-
-    <section class="card">
-      <h2>Retired precursor research</h2>
-      <p>H1, H2 and H3 are retired. Their old jobs and downloads remain visible for audit purposes, but they are not inputs to V9.</p>
-      <p class="muted small">V9 does not require a scan, matched controls, baseline context or a passing precursor confirmation.</p>
-    </section>
-
-    <section class="card">
-      <h2>Final test — Run frozen momentum-only backtest</h2>
-      <form method="post" action="/continuous-backtest">
-        <label>Untouched historical start (UTC)</label><input name="window_start_date" type="date" value="2025-07-01" readonly>
-        <label>Untouched historical end (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2025-11-01" readonly>
-        <label>Canonical quote preference</label><input name="quote_assets" value="USDT,USDC,FDUSD">
-        <label>Frozen signal</label><input value="At least 3 of: 15m return ≥0.9%; 15m volume ≥12× norm; 24h range position ≥74%; 15m run-up ≥3.3%" disabled>
-        <label>Frozen trade</label><input value="500 quote units; +10% TP; −5% SL; 3h hold; 0.10% fee each side" disabled>
-        <label>Portfolio controls</label><input value="3h same-coin cooldown; maximum five filled entries per UTC day" disabled>
-        <button>Queue final continuous backtest</button>
-      </form>
-      <p class="muted small">The trigger is checked after every completed one-minute bar. Entries begin with the first buyer-initiated aggregate trade after that minute; exits use seller-initiated aggregate trades. Parameters and dates cannot be changed after results are opened.</p>
+      <p class="muted small">The exporter produces raw Parquet data, metadata and audit files. It does not calculate or rank predictive features.</p>
     </section>
   </div>
+
+  <section class="card"><h2>Correct research sequence</h2>
+    <p><strong>First:</strong> download <code>CHATGPT_RESEARCH_INDEX.zip</code> and <code>DISCOVERY_UPLOAD_TO_CHATGPT.zip</code> and upload both to ChatGPT.</p>
+    <p><strong>Keep closed:</strong> <code>VALIDATION_DO_NOT_OPEN.zip</code> and <code>SEALED_TEST_DO_NOT_OPEN.zip</code> until ChatGPT has completed blank-canvas discovery and frozen candidate rules and acceptance criteria.</p>
+  </section>
 
   <section class="card"><h2>Worker</h2>
     {% if heartbeat %}<p>Last heartbeat: <code>{{ heartbeat.heartbeat_at }}</code></p>{% else %}<p class="muted">No worker heartbeat yet.</p>{% endif %}
   </section>
 
-  <section class="card"><h2>Discovery scans</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Progress</th><th>8h candidates</th><th>Saleable</th><th>Failures</th><th>Downloads</th></tr></thead>
+  <section class="card"><h2>8-hour scan jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Historical window</th><th>Status</th><th>Progress</th><th>Candidates</th><th>Saleable events</th><th>Failures</th></tr></thead>
     <tbody>{% for scan in scans %}<tr>
-      <td>{{ scan.created_at }}<br><span class="muted">{{ scan.id[:8] }}</span></td><td class="status">{{ scan.status }}</td>
-      <td>{{ scan.symbols_processed or 0 }}/{{ scan.symbols_total or 0 }}</td><td>{{ scan.candidates_found or 0 }}</td><td>{{ scan.events_found or 0 }}</td><td>{{ scan.failures or 0 }}</td>
-      <td><a href="/exports/events/{{ scan.id }}.csv">saleable events</a> · <a href="/exports/candidates/{{ scan.id }}.csv">all candidates</a> · <a href="/exports/decisions/{{ scan.id }}.csv">decision windows</a></td>
+      <td>{{ scan.created_at }}<br><span class="muted">{{ scan.id[:8] }}</span></td>
+      <td>{{ scan.window_start_date or "latest" }} to {{ scan.window_end_date_exclusive or "latest" }}</td>
+      <td class="status">{{ scan.status }}</td><td>{{ scan.symbols_processed or 0 }}/{{ scan.symbols_total or 0 }}</td>
+      <td>{{ scan.candidates_found or 0 }}</td><td>{{ scan.events_found or 0 }}</td><td>{{ scan.failures or 0 }}</td>
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
-  <section class="card"><h2>Positive-event archive jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Progress</th><th>Completed</th><th>Failed</th></tr></thead>
-    <tbody>{% for job in research_jobs %}<tr>
-      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
-      <td>{{ job.events_processed or 0 }}/{{ job.events_total or 0 }}</td><td>{{ job.events_completed or 0 }}</td><td>{{ job.events_failed or 0 }}</td>
+  <section class="card"><h2>Neutral ChatGPT export jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Status</th><th>Symbols</th><th>Samples</th><th>Controls</th><th>Minute rows</th><th>Failures</th></tr></thead>
+    <tbody>{% for job in chatgpt_export_jobs %}<tr>
+      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td>
+      <td class="status">{{ job.status }}</td><td>{{ job.symbols_processed or 0 }}/{{ job.symbols_total or 0 }}</td>
+      <td>{{ job.samples_exported or 0 }}</td><td>{{ job.controls_created or 0 }}</td><td>{{ job.minute_rows_exported or 0 }}</td><td>{{ job.failures or 0 }}</td>
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
-  <section class="card"><h2>Matched-control jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Events</th><th>Controls</th><th>Feature rows</th><th>Failures</th></tr></thead>
-    <tbody>{% for job in matched_jobs %}<tr>
-      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
-      <td>{{ job.events_processed or 0 }}/{{ job.events_total or 0 }}</td><td>{{ job.controls_created or 0 }}/{{ job.controls_target or 0 }}</td><td>{{ job.feature_rows or 0 }}</td><td>{{ job.failures or 0 }}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
+  <section class="card"><h2>ChatGPT research downloads</h2>
+    <p class="warning">Only open the index and discovery files initially. Opening later partitions early permanently weakens the test.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
+      <tbody>{% for file in chatgpt_export_files %}<tr>
+        <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index" }}</td>
+        <td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td><td>{{ file.size_bytes }}</td>
+        <td><a href="/chatgpt-export-files/{{ file.id }}">temporary link</a></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
 
-
-
-  <section class="card"><h2>Fresh-confirmation jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Decision</th><th>Events</th><th>Controls</th><th>Rates</th><th>Matched p</th><th>Cluster RR CI</th><th>Duration bands</th></tr></thead>
-    <tbody>{% for job in confirmation_jobs %}<tr>
-      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
-      <td>{% if job.status == "completed" %}{% if job.passed %}<span class="good">PASS</span>{% else %}FAIL{% endif %}{% else %}—{% endif %}</td>
-      <td>{{ job.event_hits or 0 }}/{{ job.events_evaluable or 0 }}</td><td>{{ job.control_hits or 0 }}/{{ job.controls_evaluable or 0 }}</td>
-      <td>{{ job.event_rate or "—" }} / {{ job.control_rate or "—" }}</td><td>{{ job.matched_permutation_p or "—" }}</td><td>{{ job.cluster_rr_ci_low or "—" }}–{{ job.cluster_rr_ci_high or "—" }}</td><td>{{ job.duration_bands_positive or 0 }}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Continuous backtest jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Decision</th><th>Window</th><th>Symbols</th><th>Signals</th><th>Completed trades</th><th>Failures</th></tr></thead>
-    <tbody>{% for job in backtest_jobs %}<tr>
-      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td>
-      <td class="status">{% if job.result_json and job.result_json.graduation %}{{ job.result_json.graduation.decision }}{% else %}—{% endif %}</td>
-      <td>{{ job.window_start_date }} to {{ job.window_end_date_exclusive }}</td><td>{{ job.symbols_processed or 0 }}/{{ job.symbols_total or 0 }}</td>
-      <td>{{ job.candidate_signals or 0 }}</td><td>{{ job.completed_trades or 0 }}</td><td>{{ job.failures or 0 }}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Fresh-confirmation and backtest downloads</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Role</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
-    <tbody>{% for file in confirmation_files %}<tr>
-      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td><td>{{ file.size_bytes }}</td><td><a href="/confirmation-files/{{ file.id }}">temporary link</a></td>
-    </tr>{% endfor %}
-    {% for file in backtest_files %}<tr>
-      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td><td>{{ file.size_bytes }}</td><td><a href="/backtest-files/{{ file.id }}">temporary link</a></td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Baseline-aligned context jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Mode</th><th>Samples</th><th>Baseline rows</th><th>Continuation rows</th><th>Failures</th></tr></thead>
-    <tbody>{% for job in baseline_context_jobs %}<tr>
-      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td><td>{{ job.research_mode }}</td>
-      <td>{{ job.samples_processed or 0 }}/{{ job.samples_total or 0 }}</td><td>{{ job.feature_rows or 0 }}</td><td>{{ job.continuation_rows or 0 }}</td><td>{{ job.failures or 0 }}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Baseline-aligned downloads</h2><p class="warning">Any previously opened package is exploratory. Legacy baseline packages remain available for audit; V8 Step 6 no longer depends on them because it corrects baseline selection directly.</p><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
-    <tbody>{% for file in baseline_context_files %}<tr>
-      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index/exploratory" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>
-      <td>{{ file.size_bytes }}</td><td><a href="/baseline-context-files/{{ file.id }}">temporary link</a></td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Ten-day context jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Mode</th><th>Samples</th><th>Feature rows</th><th>Failures</th></tr></thead>
-    <tbody>{% for job in context_jobs %}<tr>
-      <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td><td class="status">{{ job.status }}</td><td>{{ job.research_mode }}</td>
-      <td>{{ job.samples_processed or 0 }}/{{ job.samples_total or 0 }}</td><td>{{ job.feature_rows or 0 }}</td><td>{{ job.failures or 0 }}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Ten-day context downloads</h2><p class="warning">Existing/opened data are exploratory only. For a fresh staged job, do not open validation or sealed_test early.</p><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
-    <tbody>{% for file in context_files %}<tr>
-      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index/exploratory" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>
-      <td>{{ file.size_bytes }}</td><td><a href="/context-files/{{ file.id }}">temporary link</a></td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Matched-control downloads</h2><p class="warning">Analyse discovery first. Open validation only after candidate rules are fixed. Keep sealed_test unopened until the final historical test.</p><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
-    <tbody>{% for file in matched_files %}<tr>
-      <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>
-      <td>{{ file.size_bytes }}</td><td><a href="/matched-files/{{ file.id }}">temporary link</a></td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Positive-event archive downloads</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Role</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
-    <tbody>{% for file in files %}<tr>
-      <td>{{ file.created_at }}</td><td>{{ file.role or "file" }}</td><td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td>
-      <td>{{ file.size_bytes }}</td><td><a href="/files/{{ file.id }}">temporary link</a></td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
+  <section class="card"><h2>Previous research audit</h2>
+    <p class="muted">Earlier scans, controls, context jobs, confirmations and backtests remain in Supabase and Storage. V10 does not delete or reinterpret them, but they are not used to generate the new blank-canvas patterns.</p>
+  </section>
 </main></body></html>

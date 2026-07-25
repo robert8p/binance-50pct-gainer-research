@@ -1,29 +1,30 @@
-# V9 troubleshooting
+# V10 troubleshooting
 
-## The final backtest button fails immediately
+## No scan appears in the neutral exporter dropdown
 
-Confirm `/health` shows version `9.0.0` and that `supabase/migrate_v8_to_v9.sql` completed successfully. The most common cause is the old database constraint that only permitted a +15% take-profit.
+The dropdown only accepts a completed eight-hour scan with the exact explicit window:
 
-## Database error mentioning confirmation_job_id
+- `2025-01-01`
+- `2025-06-30` exclusive
 
-Run the V8-to-V9 migration. V9 deliberately stores `confirmation_job_id` as null because H1, H2 and H3 are retired.
+Refresh the dashboard after the scan reaches `completed` or `completed_with_warnings`.
 
-## The job remains queued
+## Export remains queued
 
-Open the Render worker service. It must be **Live** and its logs should show `Worker started; interrupted jobs recovered`. Confirm the Supabase environment variables are populated.
+Open the Render background worker and confirm it is **Live**. Its logs should show `Worker started; interrupted jobs recovered`. Verify that the worker has the same `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as the web service.
 
-## The job is very slow
+## Export is slow
 
-V9 scans every completed minute across the canonical Binance Spot universe and downloads aggregate trades for executable candidates. A four-month run can take hours. Do not queue it twice.
+The app is downloading and packaging ten days of one-minute data for every event and five matched controls, plus market references. It uses monthly Binance archives for complete months, but the job can still take hours. Do not queue duplicates.
 
-## Completed with warnings
+## `pyarrow` or Parquet error
 
-Download the result package. Warnings can come from missing historical archives or failed execution reconstruction. Formal graduation also requires at least 95% average minute coverage and no more than 5% symbol-generation failures.
+Render must install the pinned `pyarrow==21.0.0` dependency from `requirements.txt`. Trigger **Clear build cache & deploy** if an old environment was reused.
 
-## PASS appears on the dashboard
+## One coin fails because its symbol contains non-Latin characters
 
-A PASS does not authorise automated or live trading. Upload the result ZIP for an independent review of the outputs and the survivorship-bias limitation.
+V10 converts storage filenames to deterministic ASCII-safe names while retaining the original Binance symbol inside `samples.csv`. This fixes the earlier Supabase path issue.
 
-## FAIL appears on the dashboard
+## Validation or sealed package was opened accidentally
 
-Do not alter thresholds, exits or dates and rerun. The frozen research decision is to retire the OHLCV-only Binance surge programme.
+Treat that partition as contaminated. Do not claim it as untouched evidence. A different historical period will be required for a defensible final test.

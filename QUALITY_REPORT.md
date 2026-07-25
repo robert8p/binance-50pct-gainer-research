@@ -1,38 +1,41 @@
-# V9 quality report
+# V10 quality report
 
 ## Scope
 
-V9 changes the final research stage only. All older scan, event-archive, matched-control, context and confirmation workflows remain available for audit, but they are not inputs to the V9 decision.
+V10 changes the research hand-off rather than inventing another trading rule. The app now exports neutral raw evidence for ChatGPT analysis.
 
-## Automated checks completed locally
+## Integrity protections
 
-- 53 network-free tests passed.
-- Python compilation passed for application and test files.
-- Frozen momentum signal generation passed synthetic look-ahead checks.
-- Aggregate-trade entry, +10% take-profit, fee and exit reconstruction passed.
-- PASS/FAIL graduation logic passed positive and negative synthetic cases.
-- V9 migration and preregistered-protocol contract tests passed.
-- Existing V1–V8 compatibility tests passed.
-- Monthly-archive optimisation and daily partial-month fallback passed a synthetic cache test.
+- The source period is fixed to a previously unexamined 180-day block.
+- Event and control baselines use the same 480-minute rolling-minimum algorithm.
+- Controls with a future 50% rise are rejected.
+- Controls near known same-symbol events are rejected.
+- Control baselines are not reused across matched groups.
+- Whole UTC event dates remain in one chronological split.
+- Raw histories are not forward-filled or imputed.
+- Outcome columns are explicitly prefixed `outcome_` in sample metadata.
+- Validation and sealed files are visibly named `DO_NOT_OPEN`.
+- The app contains no V10 predictor, threshold search, model or trading rule.
 
-Two unchanged research-archive tests could not be collected locally because `pyarrow` was unavailable in the packaging environment. `pyarrow==21.0.0` remains pinned in `requirements.txt`; those tests continue to run in GitHub Actions and Render where dependencies install normally.
+## Tests
 
-## Integrity controls
+- 62 available network-free tests passed.
+- Five V10 exporter helper tests passed.
+- V10 migration contract test passed.
+- Python compilation passed.
+- Jinja template parsing passed.
+- FastAPI health/version smoke test passed.
+- Clean-package checksum verification is performed before release.
 
-- Historical window fixed to 2025-07-01 through 2025-11-01 exclusive.
-- No precursor confirmation required or permitted.
-- Signal and trade parameters fixed in code and JSON.
-- Same-timestamp selection order fixed before results.
-- Maximum five filled entries per UTC day.
-- Three-hour same-symbol cooldown after exits or failed execution.
-- Exact aggregate-trade ordering used for stop versus take-profit triggers.
-- Outcome buffer prevents trades extending beyond the fixed test window.
-- Result includes chronological, monthly, daily and symbol concentration analysis.
-- Deterministic 10,000-iteration symbol-cluster bootstrap included.
+Two unchanged legacy research tests could not be collected in the local packaging environment because PyArrow was unavailable. PyArrow remains pinned in `requirements.txt` and is required on Render and GitHub Actions.
 
-## Known limitations
+## Operational considerations
 
-- Current-universe survivorship bias remains material.
-- Aggregate trades are a historical execution proxy, not a reconstructed limit-order book.
-- Binance archive availability can vary by symbol and day.
-- A formal PASS would still require an implementation review before any live capital is used.
+The discovery archive may be large because it contains millions of raw minute rows. Overlapping sample windows are deduplicated by physical symbol/time, monthly Binance archives are used for complete months, Parquet uses Zstandard compression, and Parquet files are stored without redundant ZIP recompression.
+
+## Remaining limitations
+
+- The source universe still begins with coins currently returned as tradeable by Binance, so historically delisted coins can be absent.
+- Five controls per event are a research sample, not every possible non-event minute.
+- The selected baseline remains a scanner-defined local low; the control design now matches this mechanically, but any final candidate still requires continuous-time testing.
+- Raw aggregate trades are not included in the first discovery export because ten days of trades for hundreds of samples would be impractically large. Exact aggregate trades should be collected only after ChatGPT identifies a small number of candidate entry states.

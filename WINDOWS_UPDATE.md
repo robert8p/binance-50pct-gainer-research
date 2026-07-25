@@ -1,63 +1,65 @@
-# Simple Windows upgrade to V9
+# Simple Windows upgrade to V10
 
-## 1. Download and extract
+## 1. Extract the V10 ZIP
 
-Download `binance_momentum_continuation_backtest_v9_0_0.zip` and select **Extract All**.
+Download `binance_chatgpt_research_exporter_v10_0_0.zip`, right-click it and select **Extract All**.
 
-## 2. Update Supabase first
+## 2. Update Supabase
 
 1. Open the extracted folder.
-2. Open `supabase\migrate_v8_to_v9.sql` in Notepad.
+2. Open `supabase\migrate_v9_to_v10.sql` in Notepad.
 3. Press `Ctrl+A`, then `Ctrl+C`.
 4. Open your existing Supabase project.
 5. Open **SQL Editor → New query**.
 6. Paste the SQL and select **Run**.
 
-The migration preserves all previous scans and results. It allows V9 backtests to run without a precursor-confirmation job and permits the frozen +10% target.
+This adds the neutral export job, file and issue tables. It does not delete earlier data.
 
-## 3. Replace the GitHub files
+## 3. Update GitHub
 
-1. Open your existing GitHub repository.
+1. Open the existing GitHub repository.
 2. Select **Add file → Upload files**.
-3. Drag everything from inside the extracted V9 folder onto GitHub.
-4. Allow files with the same names to be replaced.
+3. Drag everything from inside the extracted V10 folder onto GitHub.
+4. Replace matching files.
 5. Commit with:
 
-`Upgrade to v9 momentum-only backtest`
+`Upgrade to v10 ChatGPT research exporter`
 
-## 4. Wait for Render
+## 4. Confirm Render
 
-Wait for both the web service and worker to redeploy.
-
-Open:
+Wait for the web service and worker to redeploy. Open:
 
 `https://YOUR-APP.onrender.com/health`
 
-Expected response:
+Expected result:
 
-`{"status":"ok","version":"9.0.0"}`
+`{"status":"ok","version":"10.0.0"}`
 
-## 5. Run the final backtest
+## 5. Run the fresh scan
 
-On the dashboard, find **Final test — Run frozen momentum-only backtest**.
+On the dashboard, leave the fixed dates as:
 
-The historical dates are locked to:
+- Start: `2025-01-01`
+- End exclusive: `2025-06-30`
 
-- Start: `2025-07-01`
-- End, exclusive: `2025-11-01`
+Select **Queue fresh scan** and wait until it completes.
 
-Leave the quote preference as:
+## 6. Build the neutral packages
 
-`USDT,USDC,FDUSD`
+Select the completed 2025-01-01 to 2025-06-30 scan and select **Queue neutral research export**.
 
-Select **Queue final continuous backtest** once.
+The export can be large and may take several hours. Do not queue it twice.
 
-You do not need to run Steps 1–6. V9 does not use an event scan, matched controls or a precursor confirmation.
+## 7. Download only these first
 
-## 6. Download the result
+- `CHATGPT_RESEARCH_INDEX.zip`
+- `DISCOVERY_UPLOAD_TO_CHATGPT.zip`
 
-When the job is complete, download:
+Upload both to ChatGPT.
 
-`continuous_backtest_results.zip`
+Do not open or upload:
 
-Upload that ZIP to ChatGPT for the final assessment. Do not queue a second run or change any parameter after seeing the outcome.
+- `VALIDATION_DO_NOT_OPEN.zip`
+- `SEALED_TEST_DO_NOT_OPEN.zip`
+
+until ChatGPT has frozen the candidate patterns and test criteria.

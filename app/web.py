@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance Momentum Continuation Backtest", version="9.0.0")
+app = FastAPI(title="Binance ChatGPT Research Exporter", version="10.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "9.0.0"}
+    return {"status": "ok", "version": "10.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -54,11 +54,22 @@ def dashboard(request: Request) -> HTMLResponse:
     baseline_context_files = db.select("binance_baseline_context_files", order="created_at.desc", limit=100)
     confirmation_files = db.select("binance_confirmation_files", order="created_at.desc", limit=100)
     backtest_files = db.select("binance_backtest_files", order="created_at.desc", limit=100)
+    chatgpt_export_jobs = db.select("binance_chatgpt_export_jobs", order="created_at.desc", limit=25)
+    chatgpt_export_files = db.select("binance_chatgpt_export_files", order="created_at.desc", limit=100)
     completed_scans = [
         x for x in scans
         if x["status"] in {"completed", "completed_with_warnings"}
         and x.get("event_definition_version") == "v7_rolling_8h"
         and int(x.get("window_minutes") or 0) == 480
+    ]
+    explicit_completed_scans = [
+        x for x in completed_scans
+        if x.get("window_start_date") and x.get("window_end_date_exclusive")
+    ]
+    chatgpt_source_scans = [
+        x for x in explicit_completed_scans
+        if str(x.get("window_start_date"))[:10] == "2025-01-01"
+        and str(x.get("window_end_date_exclusive"))[:10] == "2025-06-30"
     ]
     v7_scan_ids = {str(x["id"]) for x in completed_scans}
     completed_matched_jobs = [
@@ -108,6 +119,8 @@ def dashboard(request: Request) -> HTMLResponse:
             "passed_confirmation_jobs": passed_confirmation_jobs,
             "completed_matched_jobs": completed_matched_jobs,
             "completed_scans": completed_scans,
+            "explicit_completed_scans": explicit_completed_scans,
+            "chatgpt_source_scans": chatgpt_source_scans,
             "heartbeat": heartbeat[0] if heartbeat else None,
             "files": files,
             "matched_files": matched_files,
@@ -115,6 +128,8 @@ def dashboard(request: Request) -> HTMLResponse:
             "baseline_context_files": baseline_context_files,
             "confirmation_files": confirmation_files,
             "backtest_files": backtest_files,
+            "chatgpt_export_jobs": chatgpt_export_jobs,
+            "chatgpt_export_files": chatgpt_export_files,
         },
     )
 
@@ -357,6 +372,43 @@ def create_fresh_confirmation(
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/chatgpt-export")
+def create_chatgpt_export(
+    request: Request,
+    scan_id: str = Form(...),
+    controls_per_event: int = Form(5),
+) -> RedirectResponse:
+    _auth(request)
+    if controls_per_event != 5:
+        raise HTTPException(400, "V10 uses five scanner-equivalent controls per event")
+    rows = db.select("binance_scan_jobs", filters={"id": f"eq.{scan_id}"}, limit=1)
+    if not rows or rows[0].get("status") not in {"completed", "completed_with_warnings"}:
+        raise HTTPException(400, "Select a completed explicit-date eight-hour scan")
+    scan = rows[0]
+    if scan.get("event_definition_version") != "v7_rolling_8h" or int(scan.get("window_minutes") or 0) != 480:
+        raise HTTPException(400, "V10 requires the eight-hour event definition")
+    if not scan.get("window_start_date") or not scan.get("window_end_date_exclusive"):
+        raise HTTPException(400, "V10 staged research requires an explicit historical start and end date")
+    if str(scan.get("window_start_date"))[:10] != "2025-01-01" or str(scan.get("window_end_date_exclusive"))[:10] != "2025-06-30":
+        raise HTTPException(400, "V10 discovery is frozen to 2025-01-01 through 2025-06-30 exclusive")
+    db.insert(
+        "binance_chatgpt_export_jobs",
+        {
+            "id": str(uuid.uuid4()),
+            "scan_id": scan_id,
+            "status": "queued",
+            "protocol_version": "v10_neutral_chatgpt_research_export_1",
+            "controls_per_event": 5,
+            "prior_days": 10,
+            "discovery_pct": 60,
+            "validation_pct": 20,
+            "include_baseline_bar": True,
+            "reference_symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
+        },
+    )
+    return RedirectResponse("/", status_code=303)
+
+
 @app.post("/continuous-backtest")
 def create_continuous_backtest(
     request: Request,
@@ -365,6 +417,7 @@ def create_continuous_backtest(
     quote_assets: str = Form("USDT,USDC,FDUSD"),
 ) -> RedirectResponse:
     _auth(request)
+    raise HTTPException(410, "V9 is retired. Use the neutral ChatGPT research exporter instead.")
     try:
         start_day = date.fromisoformat(window_start_date)
         end_day = date.fromisoformat(window_end_date_exclusive)
@@ -514,6 +567,15 @@ def download_backtest_file(request: Request, file_id: str) -> RedirectResponse:
         raise HTTPException(404, "Backtest file not found")
     return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
 
+@app.get("/chatgpt-export-files/{file_id}")
+def download_chatgpt_export_file(request: Request, file_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_chatgpt_export_files", filters={"id": f"eq.{file_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "ChatGPT research-export file not found")
+    return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
+
+
 @app.get("/api/status")
 def api_status(request: Request) -> dict[str, Any]:
     _auth(request)
@@ -525,5 +587,6 @@ def api_status(request: Request) -> dict[str, Any]:
         "baseline_context_jobs": db.select("binance_baseline_context_jobs", order="created_at.desc", limit=20),
         "confirmation_jobs": db.select("binance_confirmation_jobs", order="created_at.desc", limit=20),
         "backtest_jobs": db.select("binance_backtest_jobs", order="created_at.desc", limit=20),
+        "chatgpt_export_jobs": db.select("binance_chatgpt_export_jobs", order="created_at.desc", limit=20),
         "worker": db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1),
     }
