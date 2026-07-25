@@ -1,65 +1,49 @@
-# Simple Windows upgrade to V10
+# Simple Windows upgrade to V10.1 — 2026 discovery
 
-## 1. Extract the V10 ZIP
+## 1. Extract the ZIP
 
-Download `binance_chatgpt_research_exporter_v10_0_0.zip`, right-click it and select **Extract All**.
+Download `binance_chatgpt_research_exporter_2026_v10_1_0.zip`, right-click it and select **Extract All**.
 
-## 2. Update Supabase
+## 2. Supabase
 
-1. Open the extracted folder.
-2. Open `supabase\migrate_v9_to_v10.sql` in Notepad.
-3. Press `Ctrl+A`, then `Ctrl+C`.
-4. Open your existing Supabase project.
-5. Open **SQL Editor → New query**.
-6. Paste the SQL and select **Run**.
+If you already deployed V10, skip this step: V10.1 needs no new database tables.
 
-This adds the neutral export job, file and issue tables. It does not delete earlier data.
+If upgrading directly from V9 or earlier, run `supabase\migrate_v9_to_v10.sql` in Supabase SQL Editor.
 
 ## 3. Update GitHub
 
 1. Open the existing GitHub repository.
 2. Select **Add file → Upload files**.
-3. Drag everything from inside the extracted V10 folder onto GitHub.
+3. Drag everything from inside the extracted V10.1 folder onto GitHub.
 4. Replace matching files.
-5. Commit with:
-
-`Upgrade to v10 ChatGPT research exporter`
+5. Commit with: `Upgrade to v10.1 2026 ChatGPT discovery`.
 
 ## 4. Confirm Render
 
-Wait for the web service and worker to redeploy. Open:
+Wait for both services to redeploy. Open:
 
 `https://YOUR-APP.onrender.com/health`
 
-Expected result:
+Expected:
 
-`{"status":"ok","version":"10.0.0"}`
+`{"status":"ok","version":"10.1.0"}`
 
-## 5. Run the fresh scan
+## 5. Run the 2026 scan
 
-On the dashboard, leave the fixed dates as:
+Leave the fixed dates as:
 
-- Start: `2025-01-01`
-- End exclusive: `2025-06-30`
+- Start: `2026-01-01`
+- End exclusive: `2026-07-25`
 
-Select **Queue fresh scan** and wait until it completes.
+This includes completed UTC data through 24 July 2026. Select **Queue fresh scan** and wait for completion.
 
-## 6. Build the neutral packages
+## 6. Build the neutral package
 
-Select the completed 2025-01-01 to 2025-06-30 scan and select **Queue neutral research export**.
+Select the completed 2026 scan and select **Queue neutral research export**. The export may take several hours. Do not queue it twice.
 
-The export can be large and may take several hours. Do not queue it twice.
-
-## 7. Download only these first
+## 7. Download and upload to ChatGPT
 
 - `CHATGPT_RESEARCH_INDEX.zip`
-- `DISCOVERY_UPLOAD_TO_CHATGPT.zip`
+- `DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip`
 
-Upload both to ChatGPT.
-
-Do not open or upload:
-
-- `VALIDATION_DO_NOT_OPEN.zip`
-- `SEALED_TEST_DO_NOT_OPEN.zip`
-
-until ChatGPT has frozen the candidate patterns and test criteria.
+There are deliberately no 2026 validation or sealed files. Those will be collected from separate periods after ChatGPT freezes candidate rules.

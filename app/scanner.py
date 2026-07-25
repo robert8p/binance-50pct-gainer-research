@@ -56,8 +56,8 @@ class Scanner:
             if end > latest_completed_end:
                 raise ValueError("Historical scan end must not include the current incomplete UTC day")
             span_days = (end - candidate_start).days
-            if span_days < 1 or span_days > 180:
-                raise ValueError("Historical scan window must be between 1 and 180 completed UTC days")
+            if span_days < 1 or span_days > 240:
+                raise ValueError("Historical scan window must be between 1 and 240 completed UTC days")
             lookback = span_days
         else:
             end = latest_completed_end

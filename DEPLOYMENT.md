@@ -1,11 +1,11 @@
-# V10 deployment
+# V10.1 deployment
 
-1. Run `supabase/migrate_v9_to_v10.sql` in the existing Supabase project.
-2. Replace the existing GitHub repository contents with V10.
-3. Allow the Render Blueprint services to redeploy.
-4. Confirm `/health` returns version `10.0.0`.
-5. Queue the fixed 180-day eight-hour scan.
-6. Queue the neutral ChatGPT export from that completed scan.
-7. Download the index and discovery packages; keep validation and sealed test closed.
+1. If V10 tables do not yet exist, run `supabase/migrate_v9_to_v10.sql`.
+2. Upload the repository files to GitHub.
+3. Wait for both Render services to redeploy.
+4. Confirm `/health` returns version `10.1.0`.
+5. Queue the fixed 2026-01-01 to 2026-07-25 scan.
+6. Queue the neutral export from that completed scan.
+7. Upload the index and `DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip` to ChatGPT.
 
-No new Render secrets or Binance credentials are required.
+All 2026 evidence is exploratory discovery-only.

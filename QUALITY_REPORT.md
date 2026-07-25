@@ -1,41 +1,34 @@
-# V10 quality report
+# V10.1 quality report
 
 ## Scope
 
-V10 changes the research hand-off rather than inventing another trading rule. The app now exports neutral raw evidence for ChatGPT analysis.
+V10.1 changes the neutral export period to 2026 year to date without turning the app into a pattern engine.
 
 ## Integrity protections
 
-- The source period is fixed to a previously unexamined 180-day block.
+- Fixed source window: 2026-01-01 to 2026-07-25 exclusive.
+- All 2026 evidence is labelled exploratory discovery-only.
+- No validation or sealed claim is created from previously opened 2026 observations.
 - Event and control baselines use the same 480-minute rolling-minimum algorithm.
-- Controls with a future 50% rise are rejected.
-- Controls near known same-symbol events are rejected.
-- Control baselines are not reused across matched groups.
-- Whole UTC event dates remain in one chronological split.
-- Raw histories are not forward-filled or imputed.
-- Outcome columns are explicitly prefixed `outcome_` in sample metadata.
-- Validation and sealed files are visibly named `DO_NOT_OPEN`.
-- The app contains no V10 predictor, threshold search, model or trading rule.
-
-## Tests
-
-- 62 available network-free tests passed.
-- Five V10 exporter helper tests passed.
-- V10 migration contract test passed.
-- Python compilation passed.
-- Jinja template parsing passed.
-- FastAPI health/version smoke test passed.
-- Clean-package checksum verification is performed before release.
-
-Two unchanged legacy research tests could not be collected in the local packaging environment because PyArrow was unavailable. PyArrow remains pinned in `requirements.txt` and is required on Render and GitHub Actions.
+- Controls with a future 50% rise, proximity to known events, incomplete history or reused baselines are rejected.
+- Raw histories are not imputed.
+- The app contains no predictor, feature ranking, threshold search, model or trading rule.
 
 ## Operational considerations
 
-The discovery archive may be large because it contains millions of raw minute rows. Overlapping sample windows are deduplicated by physical symbol/time, monthly Binance archives are used for complete months, Parquet uses Zstandard compression, and Parquet files are stored without redundant ZIP recompression.
+The scan covers 205 completed UTC days, so the explicit-date limit is raised from 180 to 240 days. Deduplicated Parquet and monthly Binance archives remain in use.
 
 ## Remaining limitations
 
-- The source universe still begins with coins currently returned as tradeable by Binance, so historically delisted coins can be absent.
-- Five controls per event are a research sample, not every possible non-event minute.
-- The selected baseline remains a scanner-defined local low; the control design now matches this mechanically, but any final candidate still requires continuous-time testing.
-- Raw aggregate trades are not included in the first discovery export because ten days of trades for hundreds of samples would be impractically large. Exact aggregate trades should be collected only after ChatGPT identifies a small number of candidate entry states.
+- The historical universe starts from symbols currently reported as tradeable by Binance.
+- Five controls per event are a sampled comparison, not all non-event minutes.
+- The export omits raw aggregate trades at this discovery stage due to size.
+- Any pattern found from 2026 must be tested on separately collected earlier data.
+
+## Validation performed
+
+- 63 network-free tests passed.
+- Python compilation passed.
+- Jinja template parsing passed.
+- FastAPI health smoke test returned version 10.1.0.
+- Two legacy PyArrow-dependent tests could not be collected in this offline environment; PyArrow remains pinned for Render and GitHub Actions.

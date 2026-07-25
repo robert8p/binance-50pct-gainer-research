@@ -1,30 +1,22 @@
-# V10 troubleshooting
+# V10.1 troubleshooting
 
-## No scan appears in the neutral exporter dropdown
+## Nothing appears in the export dropdown
 
-The dropdown only accepts a completed eight-hour scan with the exact explicit window:
+The dropdown only accepts a completed eight-hour scan with exactly:
 
-- `2025-01-01`
-- `2025-06-30` exclusive
+- Start: `2026-01-01`
+- End exclusive: `2026-07-25`
 
-Refresh the dashboard after the scan reaches `completed` or `completed_with_warnings`.
+Refresh the dashboard after the scan completes and confirm `/health` shows version `10.1.0`.
 
-## Export remains queued
+## Scan rejects the date range
 
-Open the Render background worker and confirm it is **Live**. Its logs should show `Worker started; interrupted jobs recovered`. Verify that the worker has the same `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as the web service.
+V10.1 expands the explicit historical-window limit to 240 days. If the app still says 180 days, Render is running an older version.
 
-## Export is slow
+## Export appears slow
 
-The app is downloading and packaging ten days of one-minute data for every event and five matched controls, plus market references. It uses monthly Binance archives for complete months, but the job can still take hours. Do not queue duplicates.
+The job downloads and deduplicates ten days of one-minute history for events and controls across 205 scan days. Do not queue it twice. Check worker logs and heartbeat.
 
-## `pyarrow` or Parquet error
+## No validation or sealed files appear
 
-Render must install the pinned `pyarrow==21.0.0` dependency from `requirements.txt`. Trigger **Clear build cache & deploy** if an old environment was reused.
-
-## One coin fails because its symbol contains non-Latin characters
-
-V10 converts storage filenames to deterministic ASCII-safe names while retaining the original Binance symbol inside `samples.csv`. This fixes the earlier Supabase path issue.
-
-## Validation or sealed package was opened accidentally
-
-Treat that partition as contaminated. Do not claim it as untouched evidence. A different historical period will be required for a defensible final test.
+This is intentional. Earlier 2026 research means the year cannot honestly provide untouched validation. V10.1 exports 2026 as discovery only.

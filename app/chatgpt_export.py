@@ -26,7 +26,8 @@ from .matched_controls import (
 )
 from .supabase import SupabaseClient
 
-PROTOCOL_VERSION = "v10_neutral_chatgpt_research_export_1"
+PROTOCOL_VERSION = "v10_2026_discovery_export_1"
+EXPORT_SPLITS = ("discovery",)
 RAW_COLUMNS = (
     "open",
     "high",
@@ -161,10 +162,10 @@ Columns: open_time, open, high, low, close, base volume, quote volume, trade cou
 A neutral helper that reconstructs one labelled sample window from samples.csv and the deduplicated symbol Parquet file. It creates no predictive features.
 
 ## reference_data/*.parquet
-Raw one-minute BTCUSDT, ETHUSDT and BNBUSDT data covering the split. These are provided for ChatGPT to construct market-relative patterns without the app deciding how to combine them.
+Raw one-minute BTCUSDT, ETHUSDT and BNBUSDT data covering the 2026 discovery period. These are provided for ChatGPT to construct market-relative patterns without the app deciding how to combine them.
 
 ## Integrity rules
-Event and control baselines use the same 480-minute rolling-minimum algorithm. Controls are rejected when the selected low subsequently gains 50% within eight hours or lies within 24 hours of a known event. Splits are chronological and whole UTC event dates are never divided.
+Event and control baselines use the same 480-minute rolling-minimum algorithm. Controls are rejected when the selected low subsequently gains 50% within eight hours or lies within 24 hours of a known event. All 2026 samples are exported as exploratory discovery evidence. Fresh validation and sealed periods are not created from this opened year.
 """
     path.write_text(text, encoding="utf-8")
 
@@ -230,8 +231,8 @@ class ChatGPTResearchExporter:
         scan_start = date.fromisoformat(str(start_text)[:10])
         scan_end = date.fromisoformat(str(end_text)[:10])
 
-        if scan_start != date(2025, 1, 1) or scan_end != date(2025, 6, 30):
-            raise ValueError("V10 neutral discovery export is frozen to 2025-01-01 through 2025-06-30 exclusive")
+        if scan_start != date(2026, 1, 1) or scan_end != date(2026, 7, 25):
+            raise ValueError("V10.1 discovery export is frozen to 2026-01-01 through 2026-07-25 exclusive")
 
         controls_per_event = int(job.get("controls_per_event") or 5)
         prior_days = int(job.get("prior_days") or 10)
@@ -248,11 +249,23 @@ class ChatGPTResearchExporter:
         )
         if not events:
             raise RuntimeError("Source scan has no saleable events")
-        split_map, split_dates, split_summary = _split_calendar_days(
-            events, scan_start, scan_end, discovery_pct, validation_pct
-        )
+        # All 2026 evidence is exploratory because portions of the year have already
+        # been inspected in earlier research rounds. Do not manufacture validation
+        # or sealed evidence from an opened period.
+        split_map = {date.fromisoformat(str(event["event_date"])): "discovery" for event in events}
+        all_days: set[date] = set()
+        day_cursor = scan_start
+        while day_cursor < scan_end:
+            all_days.add(day_cursor)
+            day_cursor += timedelta(days=1)
+        split_dates = {"discovery": all_days}
+        split_summary = [{
+            "split": "discovery",
+            "events": len(events),
+            "warning": "Exploratory 2026 evidence only; not untouched validation.",
+        }]
         for event in events:
-            event["split"] = split_map[date.fromisoformat(str(event["event_date"]))]
+            event["split"] = "discovery"
 
         load_start = scan_start - timedelta(days=prior_days + 1)
         load_end = scan_end + timedelta(days=1)
@@ -271,19 +284,19 @@ class ChatGPTResearchExporter:
         )
 
         work = Path(tempfile.mkdtemp(prefix=f"chatgpt-export-{job_id}-", dir=self.temp_root))
-        split_dirs = {split: work / split for split in SPLITS}
+        split_dirs = {split: work / split for split in EXPORT_SPLITS}
         for split, folder in split_dirs.items():
             (folder / "minute_data").mkdir(parents=True, exist_ok=True)
             (folder / "reference_data").mkdir(parents=True, exist_ok=True)
             _write_data_dictionary(folder / "DATA_DICTIONARY.md")
             _write_analysis_loader(folder / "analysis_loader.py")
 
-        sample_rows: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
+        sample_rows: dict[str, list[dict[str, Any]]] = {split: [] for split in EXPORT_SPLITS}
         source_manifest: list[dict[str, Any]] = []
         issues: list[dict[str, Any]] = []
         rejections: Counter[str] = Counter()
         used_baselines: Counter[tuple[str, datetime]] = Counter()
-        split_ranges: dict[str, list[datetime]] = {split: [] for split in SPLITS}
+        split_ranges: dict[str, list[datetime]] = {split: [] for split in EXPORT_SPLITS}
         failures = 0
         controls_created = 0
         minute_rows = 0
@@ -291,7 +304,7 @@ class ChatGPTResearchExporter:
         try:
             processed = 0
             for symbol, symbol_events in sorted(events_by_symbol.items()):
-                per_split_frames: dict[str, list[pd.DataFrame]] = {split: [] for split in SPLITS}
+                per_split_frames: dict[str, list[pd.DataFrame]] = {split: [] for split in EXPORT_SPLITS}
                 try:
                     loaded = self.cache.load_symbol(symbol, load_start, load_end)
                     frame = loaded.frame
@@ -457,7 +470,7 @@ class ChatGPTResearchExporter:
                 )
 
             # Export independent raw market references for each chronological split.
-            for split in SPLITS:
+            for split in EXPORT_SPLITS:
                 if not split_ranges[split]:
                     continue
                 ref_start = min(split_ranges[split]).date()
@@ -486,12 +499,10 @@ class ChatGPTResearchExporter:
             file_records: list[dict[str, Any]] = []
             checksums: list[dict[str, Any]] = []
             split_output_names = {
-                "discovery": "DISCOVERY_UPLOAD_TO_CHATGPT.zip",
-                "validation": "VALIDATION_DO_NOT_OPEN.zip",
-                "sealed_test": "SEALED_TEST_DO_NOT_OPEN.zip",
+                "discovery": "DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip",
             }
             split_summaries: list[dict[str, Any]] = []
-            for split in SPLITS:
+            for split in EXPORT_SPLITS:
                 folder = split_dirs[split]
                 rows = sample_rows[split]
                 samples_frame = pd.DataFrame(rows)
@@ -501,22 +512,22 @@ class ChatGPTResearchExporter:
                     "split": split,
                     "source_scan_id": scan_id,
                     "event_definition": ">=50% low-to-later-high rise within 480 minutes; saleability proven",
-                    "controls": "same symbol, same chronological split, same scanner-equivalent local-low algorithm, no future 50% contamination",
+                    "controls": "same symbol, same 2026 discovery pool, same scanner-equivalent local-low algorithm, no future 50% contamination",
                     "prior_days": prior_days,
                     "include_baseline_bar": include_baseline_bar,
                     "samples": len(rows),
                     "events": sum(1 for row in rows if row["label"] == 1),
                     "controls": sum(1 for row in rows if row["label"] == 0),
                     "warning": (
-                        "Discovery may be opened for ChatGPT analysis. Validation and sealed-test packages must remain unopened "
-                        "until candidate patterns and acceptance rules are frozen."
+                        "This entire 2026 package is exploratory discovery evidence. "
+                        "Fresh validation and sealed evidence must be collected from separate periods."
                     ),
                 }
                 (folder / "split_metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
                 (folder / "README.md").write_text(
-                    f"# {split.replace('_', ' ').title()} evidence package\n\n"
+                    "# 2026 exploratory discovery evidence package\n\n"
                     "This package contains raw one-minute evidence and sample labels. The app has not selected a predictor or trading rule.\n\n"
-                    + ("Upload this package to ChatGPT for blank-canvas discovery.\n" if split == "discovery" else "DO NOT OPEN OR UPLOAD THIS PACKAGE YET.\n"),
+                    "Upload this package to ChatGPT for blank-canvas discovery. It is exploratory only; do not use it as untouched validation.\n",
                     encoding="utf-8",
                 )
                 zip_name = split_output_names[split]
@@ -571,8 +582,8 @@ class ChatGPTResearchExporter:
             }, indent=2), encoding="utf-8")
             (index_dir / "README.md").write_text(
                 "# ChatGPT research export index\n\n"
-                "Download `DISCOVERY_UPLOAD_TO_CHATGPT.zip` first and upload it to ChatGPT together with this index. "
-                "Keep validation and sealed-test files unopened until ChatGPT has completed discovery and frozen candidate rules.\n",
+                "Download `DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip` and upload it to ChatGPT together with this index. "
+                "All 2026 evidence is exploratory; fresh validation and sealed evidence will be collected separately.\n",
                 encoding="utf-8",
             )
             index_zip = work / "CHATGPT_RESEARCH_INDEX.zip"

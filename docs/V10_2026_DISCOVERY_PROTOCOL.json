@@ -1,0 +1,70 @@
+{
+  "version": "v10_2026_discovery_export_1",
+  "app_version": "10.1.0",
+  "purpose": "Create a neutral 2026 year-to-date raw-data package for ChatGPT-led pattern discovery. The app must not choose, score or backtest a preferred predictor.",
+  "research_status": "exploratory_discovery_only",
+  "source_event_definition": {
+    "market": "Binance Spot canonical quote preference USDT, USDC, FDUSD",
+    "outcome": "saleable low-to-later-high rise of at least 50 percent within 480 minutes",
+    "saleability": "at least 500 quote units of seller-initiated executed notional within 300 seconds after the exact crossing trade"
+  },
+  "frozen_source_window": {
+    "start_inclusive": "2026-01-01",
+    "end_exclusive": "2026-07-25",
+    "latest_included_utc_day": "2026-07-24",
+    "days": 205
+  },
+  "integrity_note": "Parts of 2026 were examined in earlier research rounds. Therefore the whole 2026 export is discovery-only and must not be represented as untouched validation or sealed evidence.",
+  "sample_design": {
+    "history_days": 10,
+    "include_baseline_bar": true,
+    "controls_per_event": 5,
+    "control_symbol": "same as matched event",
+    "control_pool": "entire 2026 discovery window",
+    "control_baseline": "latest minimum low in the 479 completed minutes before the pseudo-cross minute, identical to the scanner",
+    "control_rejection": [
+      "selected low rises by 50 percent within the following 480 minutes",
+      "pseudo-cross or selected low lies within 24 hours of a known same-symbol event",
+      "insufficient ten-day minute history",
+      "duplicate control baseline already used by another matched group"
+    ],
+    "duration_matching": "same <=3h, 3-6h, 6-7h or 7-8h band as the event"
+  },
+  "partitioning": {
+    "discovery_percent": 100,
+    "validation_percent": 0,
+    "sealed_test_percent": 0,
+    "future_requirement": "Collect separate earlier periods after ChatGPT freezes candidate rules and acceptance criteria."
+  },
+  "raw_fields": [
+    "open_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "quote_volume",
+    "trade_count",
+    "taker_buy_base_volume",
+    "taker_buy_quote_volume",
+    "observed"
+  ],
+  "reference_assets": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT"
+  ],
+  "app_prohibitions": [
+    "no preferred predictor",
+    "no feature ranking",
+    "no threshold optimisation",
+    "no model fitting",
+    "no trading rule",
+    "no profit target or stop loss",
+    "no validation claim from 2026"
+  ],
+  "package_sequence": [
+    "CHATGPT_RESEARCH_INDEX.zip",
+    "DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip"
+  ]
+}

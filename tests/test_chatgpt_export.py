@@ -91,10 +91,10 @@ def test_zip_directory_preserves_parquet_and_text(tmp_path: Path) -> None:
 
 
 def test_protocol_is_neutral_export() -> None:
-    assert PROTOCOL_VERSION == "v10_neutral_chatgpt_research_export_1"
+    assert PROTOCOL_VERSION == "v10_2026_discovery_export_1"
 
 
-def test_exporter_builds_staged_packages_without_feature_selection(tmp_path: Path, monkeypatch) -> None:
+def test_exporter_builds_2026_discovery_package_without_feature_selection(tmp_path: Path, monkeypatch) -> None:
     from datetime import timedelta
     from collections import Counter
     from types import SimpleNamespace
@@ -104,7 +104,7 @@ def test_exporter_builds_staged_packages_without_feature_selection(tmp_path: Pat
 
     scan_id = "00000000-0000-0000-0000-000000000001"
     events = []
-    for index, day in enumerate(("2025-01-20", "2025-03-20", "2025-06-20"), start=1):
+    for index, day in enumerate(("2026-01-20", "2026-04-20", "2026-07-20"), start=1):
         baseline = datetime.fromisoformat(day + "T12:00:00+00:00")
         events.append({
             "id": f"00000000-0000-0000-0000-{index:012d}",
@@ -122,7 +122,7 @@ def test_exporter_builds_staged_packages_without_feature_selection(tmp_path: Pat
             "exit_vwap_vs_threshold_pct": -1.0,
         })
 
-    frame = _frame("2024-12-20T00:00:00Z", 195 * 1440)
+    frame = _frame("2025-12-20T00:00:00Z", 225 * 1440)
 
     class FakeDB:
         def __init__(self) -> None:
@@ -137,8 +137,8 @@ def test_exporter_builds_staged_packages_without_feature_selection(tmp_path: Pat
                     "status": "completed",
                     "event_definition_version": "v7_rolling_8h",
                     "window_minutes": 480,
-                    "window_start_date": "2025-01-01",
-                    "window_end_date_exclusive": "2025-06-30",
+                    "window_start_date": "2026-01-01",
+                    "window_end_date_exclusive": "2026-07-25",
                     "threshold_pct": 50,
                 }]
             return []
@@ -170,7 +170,7 @@ def test_exporter_builds_staged_packages_without_feature_selection(tmp_path: Pat
         frame=frame,
         source_manifest=[{
             "symbol": symbol,
-            "period": "2025-01",
+            "period": "2026-01",
             "granularity": "monthly",
             "source": "synthetic",
             "sha256": "abc",
@@ -225,11 +225,9 @@ def test_exporter_builds_staged_packages_without_feature_selection(tmp_path: Pat
     filenames = {row["filename"] for row in fake_db.file_rows}
     assert filenames == {
         "CHATGPT_RESEARCH_INDEX.zip",
-        "DISCOVERY_UPLOAD_TO_CHATGPT.zip",
-        "VALIDATION_DO_NOT_OPEN.zip",
-        "SEALED_TEST_DO_NOT_OPEN.zip",
+        "DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip",
     }
-    discovery_path = next(path for key, path in fake_db.uploads.items() if key.endswith("DISCOVERY_UPLOAD_TO_CHATGPT.zip"))
+    discovery_path = next(path for key, path in fake_db.uploads.items() if key.endswith("DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip"))
     with zipfile.ZipFile(discovery_path) as archive:
         assert "samples.csv" in archive.namelist()
         assert any(name.startswith("minute_data/") for name in archive.namelist())

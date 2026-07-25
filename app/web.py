@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance ChatGPT Research Exporter", version="10.0.0")
+app = FastAPI(title="Binance ChatGPT Research Exporter", version="10.1.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "10.0.0"}
+    return {"status": "ok", "version": "10.1.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -68,8 +68,8 @@ def dashboard(request: Request) -> HTMLResponse:
     ]
     chatgpt_source_scans = [
         x for x in explicit_completed_scans
-        if str(x.get("window_start_date"))[:10] == "2025-01-01"
-        and str(x.get("window_end_date_exclusive"))[:10] == "2025-06-30"
+        if str(x.get("window_start_date"))[:10] == "2026-01-01"
+        and str(x.get("window_end_date_exclusive"))[:10] == "2026-07-25"
     ]
     v7_scan_ids = {str(x["id"]) for x in completed_scans}
     completed_matched_jobs = [
@@ -146,8 +146,8 @@ def create_scan(
     window_end_date_exclusive: str = Form(""),
 ) -> RedirectResponse:
     _auth(request)
-    if not 1 <= lookback_days <= 180:
-        raise HTTPException(400, "lookback_days must be between 1 and 180")
+    if not 1 <= lookback_days <= 240:
+        raise HTTPException(400, "lookback_days must be between 1 and 240")
     start_value = window_start_date.strip() or None
     end_value = window_end_date_exclusive.strip() or None
     if bool(start_value) != bool(end_value):
@@ -159,8 +159,8 @@ def create_scan(
         except ValueError as exc:
             raise HTTPException(400, "Historical dates must use YYYY-MM-DD") from exc
         span = (end_day - start_day).days
-        if not 1 <= span <= 180:
-            raise HTTPException(400, "Historical window must contain 1 to 180 completed UTC days")
+        if not 1 <= span <= 240:
+            raise HTTPException(400, "Historical window must contain 1 to 240 completed UTC days")
         if end_day > datetime.now(timezone.utc).date():
             raise HTTPException(400, "Historical end cannot be after today")
     if threshold_pct <= 0:
@@ -389,15 +389,15 @@ def create_chatgpt_export(
         raise HTTPException(400, "V10 requires the eight-hour event definition")
     if not scan.get("window_start_date") or not scan.get("window_end_date_exclusive"):
         raise HTTPException(400, "V10 staged research requires an explicit historical start and end date")
-    if str(scan.get("window_start_date"))[:10] != "2025-01-01" or str(scan.get("window_end_date_exclusive"))[:10] != "2025-06-30":
-        raise HTTPException(400, "V10 discovery is frozen to 2025-01-01 through 2025-06-30 exclusive")
+    if str(scan.get("window_start_date"))[:10] != "2026-01-01" or str(scan.get("window_end_date_exclusive"))[:10] != "2026-07-25":
+        raise HTTPException(400, "V10.1 discovery is frozen to 2026-01-01 through 2026-07-25 exclusive")
     db.insert(
         "binance_chatgpt_export_jobs",
         {
             "id": str(uuid.uuid4()),
             "scan_id": scan_id,
             "status": "queued",
-            "protocol_version": "v10_neutral_chatgpt_research_export_1",
+            "protocol_version": "v10_2026_discovery_export_1",
             "controls_per_event": 5,
             "prior_days": 10,
             "discovery_pct": 60,

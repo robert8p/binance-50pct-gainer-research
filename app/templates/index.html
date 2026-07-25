@@ -19,23 +19,23 @@
 </head>
 <body><main>
   <h1>Binance ChatGPT Research Exporter</h1>
-  <p class="muted">v10.0 keeps the app in its proper role: it collects, cleans, matches and partitions the evidence. ChatGPT—not the app—will generate features, search for patterns and formulate candidate rules.</p>
+  <p class="muted">v10.1 keeps the app in its proper role: it collects, cleans, matches and partitions the evidence. ChatGPT—not the app—will generate features, search for patterns and formulate candidate rules.</p>
   <p class="warning">V9’s hard-coded momentum backtest is retired and disabled. V10 contains no preferred predictor, signal threshold, profit target or trading rule.</p>
 
   <div class="grid">
     <section class="card">
-      <h2>Step 1 — Build a fresh 8-hour event scan</h2>
+      <h2>Step 1 — Build the 2026 8-hour event scan</h2>
       <form method="post" action="/scans">
-        <label>Historical start date (UTC, inclusive)</label><input name="window_start_date" type="date" value="2025-01-01" required>
-        <label>Historical end date (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2025-06-30" required>
-        <p class="muted small">This is a 180-day historical window. Use a period whose raw event/control evidence has not previously been examined.</p>
+        <label>Historical start date (UTC, inclusive)</label><input name="window_start_date" type="date" value="2026-01-01" required>
+        <label>Historical end date (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2026-07-25" required>
+        <p class="muted small">This fixed 205-day window covers 2026 through 24 July. Because parts of 2026 have already been examined, the entire export is exploratory discovery evidence only.</p>
         <input name="lookback_days" type="hidden" value="60">
         <label>Event definition</label><input value="Saleable ≥50% rise within 8 hours" disabled>
         <input name="threshold_pct" type="hidden" value="50">
         <input name="quote_assets" type="hidden" value="USDT,USDC,FDUSD">
         <input name="min_exit_notional" type="hidden" value="500">
         <input name="confirmation_window_seconds" type="hidden" value="300">
-        <button>Queue fresh scan</button>
+        <button>Queue 2026 scan</button>
       </form>
     </section>
 
@@ -50,18 +50,18 @@
         </select>
         <input name="controls_per_event" type="hidden" value="5">
         <label>Raw history per sample</label><input value="10 days of one-minute Binance data" disabled>
-        <label>Control method</label><input value="Same coin and split; same scanner local-low algorithm; 5 controls/event" disabled>
-        <label>Chronological partitions</label><input value="60% discovery / 20% validation / 20% sealed test" disabled>
+        <label>Control method</label><input value="Same coin, 2026 discovery pool, same scanner local-low algorithm; 5 controls/event" disabled>
+        <label>Chronological partitions</label><input value="100% exploratory 2026 discovery; fresh validation will be collected separately" disabled>
         <label>Market reference data</label><input value="Raw BTCUSDT, ETHUSDT and BNBUSDT one-minute bars" disabled>
         <button>Queue neutral research export</button>
       </form>
-      <p class="muted small">The exporter produces raw Parquet data, metadata and audit files. It does not calculate or rank predictive features.</p>
+      <p class="muted small">The exporter produces one 2026 discovery package of raw Parquet data, metadata and audit files. It does not calculate or rank predictive features.</p>
     </section>
   </div>
 
   <section class="card"><h2>Correct research sequence</h2>
-    <p><strong>First:</strong> download <code>CHATGPT_RESEARCH_INDEX.zip</code> and <code>DISCOVERY_UPLOAD_TO_CHATGPT.zip</code> and upload both to ChatGPT.</p>
-    <p><strong>Keep closed:</strong> <code>VALIDATION_DO_NOT_OPEN.zip</code> and <code>SEALED_TEST_DO_NOT_OPEN.zip</code> until ChatGPT has completed blank-canvas discovery and frozen candidate rules and acceptance criteria.</p>
+    <p>Download <code>CHATGPT_RESEARCH_INDEX.zip</code> and <code>DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip</code>, then upload both to ChatGPT.</p>
+    <p><strong>Research status:</strong> all 2026 evidence is treated as exploratory. Validation and sealed evidence will come from separate earlier periods after ChatGPT freezes candidate rules.</p>
   </section>
 
   <section class="card"><h2>Worker</h2>
@@ -88,7 +88,7 @@
   </table></div></section>
 
   <section class="card"><h2>ChatGPT research downloads</h2>
-    <p class="warning">Only open the index and discovery files initially. Opening later partitions early permanently weakens the test.</p>
+    <p class="warning">This release intentionally creates no validation or sealed package from 2026. All 2026 evidence is discovery-only.</p>
     <div class="scroll"><table>
       <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
       <tbody>{% for file in chatgpt_export_files %}<tr>

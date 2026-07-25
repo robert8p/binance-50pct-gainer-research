@@ -1,4 +1,4 @@
-# Data contract — V10.0.0
+# Data contract — V10.1.0
 
 ## Purpose
 

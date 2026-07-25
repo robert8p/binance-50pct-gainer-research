@@ -1,18 +1,10 @@
 # Changelog
 
-## 10.0.0
+## 10.1.0
 
-- Retired and disabled the V9 hard-coded momentum backtest.
-- Added a neutral raw-data exporter for ChatGPT-led pattern discovery.
-- Frozen a fresh 2025-01-01 to 2025-06-30 source period.
-- Added scanner-equivalent local-low controls with future-event contamination rejection.
-- Added ten-day raw one-minute event/control Parquet exports.
-- Added raw BTCUSDT, ETHUSDT and BNBUSDT reference data.
-- Added chronological discovery, validation and sealed-test packages.
-- Added ASCII-safe storage paths for non-Latin Binance symbols.
-- Added Supabase V10 job, file and issue tables.
-- Added V10 integrity tests and protocol documentation.
-
-## 9.0.0
-
-- Added the now-retired fixed momentum-continuation backtest. Its files and historical jobs remain for audit only.
+- Changed the source window to 2026-01-01 through 2026-07-25 exclusive.
+- Expanded explicit historical scans to 240 days.
+- Treats all 2026 evidence as exploratory discovery only.
+- Removed validation and sealed package generation from the opened 2026 period.
+- Renamed the discovery package to `DISCOVERY_2026_UPLOAD_TO_CHATGPT.zip`.
+- Preserved neutral raw-data export and scanner-equivalent controls.
