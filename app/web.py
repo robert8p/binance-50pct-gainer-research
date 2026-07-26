@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance 25% ChatGPT Research Exporter", version="11.0.0")
+app = FastAPI(title="Binance Exact Entry Validation", version="12.0.0")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "11.0.0"}
+    return {"status": "ok", "version": "12.0.0"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -56,12 +56,13 @@ def dashboard(request: Request) -> HTMLResponse:
     backtest_files = db.select("binance_backtest_files", order="created_at.desc", limit=100)
     chatgpt_export_jobs = db.select("binance_chatgpt_export_jobs", order="created_at.desc", limit=25)
     chatgpt_export_files = db.select("binance_chatgpt_export_files", order="created_at.desc", limit=100)
+    entry_validation_jobs = db.select("binance_entry_validation_jobs", order="created_at.desc", limit=25)
+    entry_validation_files = db.select("binance_entry_validation_files", order="created_at.desc", limit=100)
     completed_scans = [
         x for x in scans
         if x["status"] in {"completed", "completed_with_warnings"}
-        and x.get("event_definition_version") == "v11_rolling_8h_25pct"
+        and x.get("event_definition_version") == "v7_rolling_8h"
         and int(x.get("window_minutes") or 0) == 480
-        and abs(float(x.get("threshold_pct") or 0) - 25.0) < 1e-12
     ]
     explicit_completed_scans = [
         x for x in completed_scans
@@ -131,6 +132,8 @@ def dashboard(request: Request) -> HTMLResponse:
             "backtest_files": backtest_files,
             "chatgpt_export_jobs": chatgpt_export_jobs,
             "chatgpt_export_files": chatgpt_export_files,
+            "entry_validation_jobs": entry_validation_jobs,
+            "entry_validation_files": entry_validation_files,
         },
     )
 
@@ -139,7 +142,7 @@ def dashboard(request: Request) -> HTMLResponse:
 def create_scan(
     request: Request,
     lookback_days: int = Form(60),
-    threshold_pct: float = Form(25),
+    threshold_pct: float = Form(50),
     quote_assets: str = Form("USDT,USDC,FDUSD"),
     min_exit_notional: float = Form(500),
     confirmation_window_seconds: int = Form(300),
@@ -164,21 +167,15 @@ def create_scan(
             raise HTTPException(400, "Historical window must contain 1 to 240 completed UTC days")
         if end_day > datetime.now(timezone.utc).date():
             raise HTTPException(400, "Historical end cannot be after today")
-    if abs(threshold_pct - 25.0) > 1e-12:
-        raise HTTPException(400, "V11 event threshold is frozen at 25%")
-    if abs(min_exit_notional - 500.0) > 1e-12:
-        raise HTTPException(400, "V11 saleability floor is frozen at 500 quote units")
-    if confirmation_window_seconds != 300:
-        raise HTTPException(400, "V11 saleability window is frozen at 300 seconds")
+    if threshold_pct <= 0:
+        raise HTTPException(400, "threshold_pct must be positive")
     quotes = [x.strip().upper() for x in quote_assets.split(",") if x.strip()]
-    if quotes != ["USDT", "USDC", "FDUSD"]:
-        raise HTTPException(400, "V11 quote preference is frozen at USDT,USDC,FDUSD")
     db.insert(
         "binance_scan_jobs",
         {
             "id": str(uuid.uuid4()),
             "status": "queued",
-            "event_definition_version": "v11_rolling_8h_25pct",
+            "event_definition_version": "v7_rolling_8h",
             "lookback_days": lookback_days,
             "threshold_pct": threshold_pct,
             "window_minutes": 480,
@@ -387,28 +384,24 @@ def create_chatgpt_export(
 ) -> RedirectResponse:
     _auth(request)
     if controls_per_event != 5:
-        raise HTTPException(400, "V11 uses five scanner-equivalent same-coin controls per event")
+        raise HTTPException(400, "V10.2.1 uses five scanner-equivalent same-coin controls per event")
     rows = db.select("binance_scan_jobs", filters={"id": f"eq.{scan_id}"}, limit=1)
     if not rows or rows[0].get("status") not in {"completed", "completed_with_warnings"}:
         raise HTTPException(400, "Select a completed explicit-date eight-hour scan")
     scan = rows[0]
-    if (
-        scan.get("event_definition_version") != "v11_rolling_8h_25pct"
-        or int(scan.get("window_minutes") or 0) != 480
-        or abs(float(scan.get("threshold_pct") or 0) - 25.0) > 1e-12
-    ):
-        raise HTTPException(400, "V11 requires the saleable 25% within eight hours event definition")
+    if scan.get("event_definition_version") != "v7_rolling_8h" or int(scan.get("window_minutes") or 0) != 480:
+        raise HTTPException(400, "V10 requires the eight-hour event definition")
     if not scan.get("window_start_date") or not scan.get("window_end_date_exclusive"):
-        raise HTTPException(400, "V11 staged research requires an explicit historical start and end date")
+        raise HTTPException(400, "V10 staged research requires an explicit historical start and end date")
     if str(scan.get("window_start_date"))[:10] != "2026-01-01" or str(scan.get("window_end_date_exclusive"))[:10] != "2026-07-25":
-        raise HTTPException(400, "V11 discovery is frozen to 2026-01-01 through 2026-07-25 exclusive")
+        raise HTTPException(400, "V10.2.1 discovery is frozen to 2026-01-01 through 2026-07-25 exclusive")
     db.insert(
         "binance_chatgpt_export_jobs",
         {
             "id": str(uuid.uuid4()),
             "scan_id": scan_id,
             "status": "queued",
-            "protocol_version": "v11_2026_25pct_full_universe_discovery_export_1",
+            "protocol_version": "v10_2026_full_universe_discovery_export_3",
             "controls_per_event": 5,
             "prior_days": 10,
             "discovery_pct": 60,
@@ -429,6 +422,49 @@ def cancel_chatgpt_export(request: Request, job_id: str) -> RedirectResponse:
     if rows[0].get("status") in {"queued", "running"}:
         db.update(
             "binance_chatgpt_export_jobs",
+            {"id": f"eq.{job_id}"},
+            {
+                "status": "failed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "heartbeat_at": None,
+                "error_message": "Cancelled from dashboard",
+            },
+        )
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/entry-validation")
+def create_entry_validation(request: Request) -> RedirectResponse:
+    _auth(request)
+    active = db.select(
+        "binance_entry_validation_jobs",
+        filters={"status": "in.(queued,running)"},
+        limit=1,
+    )
+    if active:
+        raise HTTPException(409, "An entry-validation job is already queued or running")
+    db.insert(
+        "binance_entry_validation_jobs",
+        {
+            "id": str(uuid.uuid4()),
+            "status": "queued",
+            "protocol_version": "v12_exact_entry_validation_1",
+            "window_start_date": "2025-01-01",
+            "window_end_date_exclusive": "2025-07-01",
+        },
+    )
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/entry-validation/{job_id}/cancel")
+def cancel_entry_validation(request: Request, job_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_entry_validation_jobs", filters={"id": f"eq.{job_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "Entry-validation job not found")
+    if rows[0].get("status") in {"queued", "running"}:
+        db.update(
+            "binance_entry_validation_jobs",
             {"id": f"eq.{job_id}"},
             {
                 "status": "failed",
@@ -502,7 +538,7 @@ def events_csv(request: Request, scan_id: str) -> StreamingResponse:
         filters={"scan_id": f"eq.{scan_id}", "sellability_pass": "eq.true"},
         order="event_date.asc,symbol.asc",
     )
-    return _csv_response(rows, f"binance_saleable_25pct_8h_events_{scan_id}.csv")
+    return _csv_response(rows, f"binance_saleable_8h_gainer_events_{scan_id}.csv")
 
 
 @app.get("/exports/candidates/{scan_id}.csv")
@@ -512,7 +548,7 @@ def candidates_csv(request: Request, scan_id: str) -> StreamingResponse:
     rows = db.select_all(
         "binance_gainer_events", filters={"scan_id": f"eq.{scan_id}"}, order="event_date.asc,symbol.asc"
     )
-    return _csv_response(rows, f"binance_all_25pct_8h_candidates_{scan_id}.csv")
+    return _csv_response(rows, f"binance_all_8h_gainer_candidates_{scan_id}.csv")
 
 
 @app.get("/exports/decisions/{scan_id}.csv")
@@ -607,6 +643,15 @@ def download_chatgpt_export_file(request: Request, file_id: str) -> RedirectResp
     return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
 
 
+@app.get("/entry-validation-files/{file_id}")
+def download_entry_validation_file(request: Request, file_id: str) -> RedirectResponse:
+    _auth(request)
+    rows = db.select("binance_entry_validation_files", filters={"id": f"eq.{file_id}"}, limit=1)
+    if not rows:
+        raise HTTPException(404, "Entry-validation file not found")
+    return RedirectResponse(db.signed_url(rows[0]["storage_path"], expires_in=3600), status_code=302)
+
+
 @app.get("/api/status")
 def api_status(request: Request) -> dict[str, Any]:
     _auth(request)
@@ -619,5 +664,6 @@ def api_status(request: Request) -> dict[str, Any]:
         "confirmation_jobs": db.select("binance_confirmation_jobs", order="created_at.desc", limit=20),
         "backtest_jobs": db.select("binance_backtest_jobs", order="created_at.desc", limit=20),
         "chatgpt_export_jobs": db.select("binance_chatgpt_export_jobs", order="created_at.desc", limit=20),
+        "entry_validation_jobs": db.select("binance_entry_validation_jobs", order="created_at.desc", limit=20),
         "worker": db.select("binance_worker_heartbeats", filters={"worker_name": "eq.main"}, limit=1),
     }

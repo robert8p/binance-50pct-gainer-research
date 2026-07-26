@@ -31,7 +31,7 @@ from .matched_controls import (
 )
 from .supabase import SupabaseClient
 
-PROTOCOL_VERSION = "v11_2026_25pct_full_universe_discovery_export_1"
+PROTOCOL_VERSION = "v10_2026_full_universe_discovery_export_3"
 BACKGROUND_SAMPLES_PER_SYMBOL = 1
 CHUNK_TARGET_BYTES = 300 * 1024 * 1024
 EXPORT_SPLITS = ("discovery",)
@@ -156,7 +156,7 @@ def _write_data_dictionary(path: Path) -> None:
 This package is deliberately a neutral evidence export. It contains no preferred predictor, signal or trading rule.
 
 ## samples.csv
-One row per event or neutral non-event sample. `label=1` identifies a saleable >=25% eight-hour event. `label=0` includes both same-coin scanner-equivalent controls and deterministic full-universe background samples, including coins with no 25% event in 2026.
+One row per event or neutral non-event sample. `label=1` identifies a saleable >=50% eight-hour event. `label=0` includes both same-coin scanner-equivalent controls and deterministic full-universe background samples, including coins with no 50% event in 2026.
 
 ## minute_data/*.parquet
 Raw Binance one-minute kline fields stored once per physical symbol/time. Use `symbol`, `history_start`, `history_end` and `baseline_time` from samples.csv to reconstruct each labelled ten-day window. No missing values are imputed.
@@ -170,7 +170,7 @@ A neutral helper that reconstructs one labelled sample window from samples.csv a
 The separate universe-reference package contains raw one-minute BTCUSDT, ETHUSDT and BNBUSDT data, the complete canonical-symbol inventory, and full-universe daily bars.
 
 ## Integrity rules
-Event, same-coin control and full-universe background baselines use the same 480-minute rolling-minimum algorithm. Negative samples are rejected when the selected low subsequently gains 25% within eight hours or lies within 24 hours of a known event in that coin. All 2026 samples are exploratory discovery evidence.
+Event, same-coin control and full-universe background baselines use the same 480-minute rolling-minimum algorithm. Negative samples are rejected when the selected low subsequently gains 50% within eight hours or lies within 24 hours of a known event in that coin. All 2026 samples are exploratory discovery evidence.
 """
     path.write_text(text, encoding="utf-8")
 
@@ -304,7 +304,7 @@ def select_universe_background_samples(
                 rejection["background_incomplete_algorithm_window"] += 1
                 continue
             if derived["contaminated"]:
-                rejection["background_future_25pct_contamination"] += 1
+                rejection["background_future_50pct_contamination"] += 1
                 continue
             baseline = parse_datetime(derived["baseline_time"])
             if any(abs((baseline - known).total_seconds()) < 24 * 3600 for known in known_event_times):
@@ -330,7 +330,7 @@ def select_universe_background_samples(
             continue
         derived = selected["derived"]
         sample_id = deterministic_uuid(
-            "v11-25pct-full-universe-background",
+            "v10.2-full-universe-background",
             symbol,
             sample_index,
             selected["pseudo_cross"].isoformat(),
@@ -460,12 +460,8 @@ class ChatGPTResearchExporter:
         scan = scan_rows[0]
         if scan.get("status") not in {"completed", "completed_with_warnings"}:
             raise ValueError("Source scan is not complete")
-        if (
-            scan.get("event_definition_version") != "v11_rolling_8h_25pct"
-            or int(scan.get("window_minutes") or 0) != 480
-            or abs(float(scan.get("threshold_pct") or 0) - 25.0) > 1e-12
-        ):
-            raise ValueError("Neutral exporter requires a completed saleable 25% within eight hours scan")
+        if scan.get("event_definition_version") != "v7_rolling_8h" or int(scan.get("window_minutes") or 0) != 480:
+            raise ValueError("Neutral exporter requires a completed eight-hour scan")
         start_text = scan.get("window_start_date") or (scan.get("result_json") or {}).get("window_start")
         end_text = scan.get("window_end_date_exclusive") or (scan.get("result_json") or {}).get("window_end_exclusive")
         if not start_text or not end_text:
@@ -473,12 +469,12 @@ class ChatGPTResearchExporter:
         scan_start = date.fromisoformat(str(start_text)[:10])
         scan_end = date.fromisoformat(str(end_text)[:10])
         if scan_start != date(2026, 1, 1) or scan_end != date(2026, 7, 25):
-            raise ValueError("V11 discovery export is frozen to 2026-01-01 through 2026-07-25 exclusive")
+            raise ValueError("V10.2 discovery export is frozen to 2026-01-01 through 2026-07-25 exclusive")
 
         controls_per_event = int(job.get("controls_per_event") or 5)
         prior_days = int(job.get("prior_days") or 10)
         include_baseline_bar = bool(job.get("include_baseline_bar", True))
-        threshold_pct = float(scan.get("threshold_pct") or 25)
+        threshold_pct = float(scan.get("threshold_pct") or 50)
         window_minutes = int(scan.get("window_minutes") or 480)
 
         events = self.db.select_all(
@@ -805,7 +801,7 @@ class ChatGPTResearchExporter:
             chunks = _chunk_symbols(symbol_files, CHUNK_TARGET_BYTES)
             for part_number, symbols in enumerate(chunks, start=1):
                 self._assert_active(job_id)
-                zip_name = f"DISCOVERY_2026_25PCT_SYMBOLS_PART_{part_number:03d}.zip"
+                zip_name = f"DISCOVERY_2026_SYMBOLS_PART_{part_number:03d}.zip"
                 zip_path = work / zip_name
                 chunk_meta = _write_symbol_chunk(
                     zip_path,
@@ -839,7 +835,7 @@ class ChatGPTResearchExporter:
                 })
                 zip_path.unlink(missing_ok=True)
 
-            reference_zip = work / "DISCOVERY_2026_25PCT_UNIVERSE_REFERENCE.zip"
+            reference_zip = work / "DISCOVERY_2026_UNIVERSE_REFERENCE.zip"
             _zip_directory(reference_dir, reference_zip)
             reference_storage = f"chatgpt-research/{job_id}/{reference_zip.name}"
             self.db.upload_file(reference_storage, reference_zip, "application/zip")
@@ -881,7 +877,7 @@ class ChatGPTResearchExporter:
                 "protocol_version": PROTOCOL_VERSION,
                 "source_scan_id": scan_id,
                 "source_window": {"start": scan_start.isoformat(), "end_exclusive": scan_end.isoformat()},
-                "event_definition": "saleable >=25% rise within eight hours",
+                "event_definition": "saleable >=50% rise within eight hours",
                 "research_design": "neutral full-universe raw-data export for ChatGPT-led discovery",
                 "canonical_symbols": len(all_symbols),
                 "symbols_processed": len(all_symbols),
@@ -902,11 +898,11 @@ class ChatGPTResearchExporter:
             (index_dir / "research_index.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
             (index_dir / "README.md").write_text(
                 "# ChatGPT full-universe research index\n\n"
-                "Upload this index, `DISCOVERY_2026_25PCT_UNIVERSE_REFERENCE.zip`, and every "
-                "`DISCOVERY_2026_25PCT_SYMBOLS_PART_*.zip` file to ChatGPT. The app selected no predictor or rule.\n",
+                "Upload this index, `DISCOVERY_2026_UNIVERSE_REFERENCE.zip`, and every "
+                "`DISCOVERY_2026_SYMBOLS_PART_*.zip` file to ChatGPT. The app selected no predictor or rule.\n",
                 encoding="utf-8",
             )
-            index_zip = work / "CHATGPT_25PCT_RESEARCH_INDEX.zip"
+            index_zip = work / "CHATGPT_RESEARCH_INDEX.zip"
             _zip_directory(index_dir, index_zip)
             index_storage = f"chatgpt-research/{job_id}/{index_zip.name}"
             self.db.upload_file(index_storage, index_zip, "application/zip")

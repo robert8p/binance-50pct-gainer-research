@@ -1,15 +1,23 @@
-# V11 data contract
+# Data contract — V10.2.1
 
 ## Labels
 
-- `label=1`, `sample_type=event`: saleable >=25% rise from the selected local-low baseline within eight hours.
-- `label=0`, `sample_type=same_coin_control`: same-coin scanner-equivalent local-low window that does not rise 25% within eight hours.
-- `label=0`, `sample_type=universe_background`: deterministic scanner-equivalent local-low window from the full canonical Binance universe that does not rise 25% within eight hours.
+- `label=1`, `sample_type=event`: saleable >=50% rise within eight hours.
+- `label=0`, `sample_type=same_coin_control`: same-symbol negative selected using the same rolling-local-low algorithm.
+- `label=0`, `sample_type=universe_background`: deterministic negative from any canonical symbol, including symbols with no qualifying event.
 
-## Raw history
+## Raw minute files
 
-Each sample points to ten days of deduplicated one-minute OHLCV, quote volume, trade count and taker-buy fields. The app creates no predictive features and selects no rule.
+Each symbol part contains deduplicated one-minute Binance kline fields. `samples.csv` provides each sample's exact history bounds. No predictive features or imputations are supplied.
+
+## Universe reference
+
+`DISCOVERY_2026_UNIVERSE_REFERENCE.zip` contains:
+
+- `universe_symbols.csv`
+- `universe_daily_data.parquet`
+- raw BTCUSDT, ETHUSDT and BNBUSDT minute bars
 
 ## Research status
 
-All 2026 25% evidence is exploratory discovery. Earlier 50% findings are not validation evidence for this target.
+All 2026 evidence is exploratory. Separate historical periods are required for validation and sealed testing after ChatGPT freezes candidate rules.

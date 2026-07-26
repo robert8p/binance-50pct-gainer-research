@@ -34,7 +34,7 @@ class Scanner:
 
     def run(self, job: dict[str, Any]) -> dict[str, Any]:
         job_id = str(job["id"])
-        event_definition_version = str(job.get("event_definition_version") or "v11_rolling_8h_25pct")
+        event_definition_version = str(job.get("event_definition_version") or "v7_rolling_8h")
         lookback = int(job.get("lookback_days") or 60)
         threshold_pct = float(job.get("threshold_pct") or 50)
         window_minutes = int(job.get("window_minutes") or 480)

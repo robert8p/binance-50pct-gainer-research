@@ -122,7 +122,7 @@ def test_zip_directory_preserves_parquet_and_text(tmp_path: Path) -> None:
 
 
 def test_protocol_is_full_universe_neutral_export() -> None:
-    assert PROTOCOL_VERSION == "v11_2026_25pct_full_universe_discovery_export_1"
+    assert PROTOCOL_VERSION == "v10_2026_full_universe_discovery_export_3"
 
 
 def test_exporter_builds_full_universe_chunks(tmp_path: Path, monkeypatch) -> None:
@@ -141,7 +141,7 @@ def test_exporter_builds_full_universe_chunks(tmp_path: Path, monkeypatch) -> No
         "baseline_time": baseline.isoformat(),
         "first_cross_time": (baseline + timedelta(hours=4)).isoformat(),
         "minutes_baseline_open_to_cross_open": 240,
-        "rolling_gain_pct_at_cross_trade": 25.0,
+        "rolling_gain_pct_at_cross_trade": 50.0,
         "sellability_pass": True,
         "exit_vwap": 1.5,
         "exit_vwap_vs_threshold_pct": -1.0,
@@ -164,11 +164,11 @@ def test_exporter_builds_full_universe_chunks(tmp_path: Path, monkeypatch) -> No
                 return [{
                     "id": scan_id,
                     "status": "completed",
-                    "event_definition_version": "v11_rolling_8h_25pct",
+                    "event_definition_version": "v7_rolling_8h",
                     "window_minutes": 480,
                     "window_start_date": "2026-01-01",
                     "window_end_date_exclusive": "2026-07-25",
-                    "threshold_pct": 25,
+                    "threshold_pct": 50,
                 }]
             if table == "binance_chatgpt_export_jobs":
                 return [{"id": job_id, "status": self.job_status}]
@@ -285,9 +285,9 @@ def test_exporter_builds_full_universe_chunks(tmp_path: Path, monkeypatch) -> No
     assert result["full_universe_backgrounds_created"] == 2
     assert result["same_coin_controls_created"] == 1
     filenames = {row["filename"] for row in fake_db.file_rows}
-    assert "CHATGPT_25PCT_RESEARCH_INDEX.zip" in filenames
-    assert "DISCOVERY_2026_25PCT_UNIVERSE_REFERENCE.zip" in filenames
-    assert any(name.startswith("DISCOVERY_2026_25PCT_SYMBOLS_PART_") for name in filenames)
+    assert "CHATGPT_RESEARCH_INDEX.zip" in filenames
+    assert "DISCOVERY_2026_UNIVERSE_REFERENCE.zip" in filenames
+    assert any(name.startswith("DISCOVERY_2026_SYMBOLS_PART_") for name in filenames)
     symbol_zip = next(path for key, path in fake_db.uploads.items() if "SYMBOLS_PART" in key)
     with zipfile.ZipFile(symbol_zip) as archive:
         assert "samples.csv" in archive.namelist()

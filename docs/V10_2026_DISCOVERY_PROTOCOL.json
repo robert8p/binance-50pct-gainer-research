@@ -1,12 +1,12 @@
 {
-  "version": "v11_2026_25pct_full_universe_discovery_export_1",
-  "app_version": "11.0.0",
+  "version": "v10_2026_full_universe_discovery_export_3",
+  "app_version": "10.2.1",
   "window": {
     "start_inclusive": "2026-01-01",
     "end_exclusive": "2026-07-25"
   },
   "research_status": "exploratory_discovery_only",
-  "event_definition": "saleable >=25% low-to-later-high rise within 480 minutes",
+  "event_definition": "saleable >=50% low-to-later-high rise within 480 minutes",
   "evidence_populations": {
     "events": "all saleable events",
     "same_coin_controls_per_event": 5,
@@ -25,8 +25,8 @@
   "pattern_ranking_by_app": false,
   "trading_rule_by_app": false,
   "outputs": [
-    "CHATGPT_25PCT_RESEARCH_INDEX.zip",
-    "DISCOVERY_2026_25PCT_UNIVERSE_REFERENCE.zip",
-    "DISCOVERY_2026_25PCT_SYMBOLS_PART_NNN.zip"
+    "CHATGPT_RESEARCH_INDEX.zip",
+    "DISCOVERY_2026_UNIVERSE_REFERENCE.zip",
+    "DISCOVERY_2026_SYMBOLS_PART_NNN.zip"
   ]
 }

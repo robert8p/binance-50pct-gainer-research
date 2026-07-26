@@ -13,6 +13,7 @@ from .baseline_context import BaselineContextBuilder
 from .confirmation import FreshConfirmationBuilder
 from .backtest import ContinuousBacktestBuilder
 from .chatgpt_export import ChatGPTResearchExporter
+from .entry_validation import ExactEntryValidationBuilder
 from .scanner import Scanner
 from .supabase import SupabaseClient
 
@@ -40,7 +41,7 @@ def _claim(db: SupabaseClient, table: str) -> dict | None:
 
 def _recover_interrupted_jobs(db: SupabaseClient) -> None:
     """Requeue jobs left running by a worker restart; all writes are idempotent."""
-    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs", "binance_baseline_context_jobs", "binance_confirmation_jobs", "binance_backtest_jobs", "binance_chatgpt_export_jobs"):
+    for table in ("binance_scan_jobs", "binance_research_jobs", "binance_matched_control_jobs", "binance_context_jobs", "binance_baseline_context_jobs", "binance_confirmation_jobs", "binance_backtest_jobs", "binance_chatgpt_export_jobs", "binance_entry_validation_jobs"):
         db.update(
             table,
             {"status": "eq.running"},
@@ -65,6 +66,7 @@ def main() -> None:
     confirmation_builder = FreshConfirmationBuilder(db, binance, settings.temp_data_dir)
     backtest_builder = ContinuousBacktestBuilder(db, binance, settings.temp_data_dir)
     chatgpt_exporter = ChatGPTResearchExporter(db, binance, settings.temp_data_dir)
+    entry_validation_builder = ExactEntryValidationBuilder(db, binance, settings.temp_data_dir)
     _recover_interrupted_jobs(db)
     logger.info("Worker started; interrupted jobs recovered")
     while True:
@@ -74,6 +76,40 @@ def main() -> None:
                 [{"worker_name": "main", "heartbeat_at": datetime.now(timezone.utc).isoformat()}],
                 on_conflict="worker_name",
             )
+            entry_validation_job = _claim(db, "binance_entry_validation_jobs")
+            if entry_validation_job:
+                job_id = entry_validation_job["id"]
+                try:
+                    result = entry_validation_builder.run(entry_validation_job)
+                    has_warnings = result.get("failures", 0) > 0
+                    db.update(
+                        "binance_entry_validation_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "completed_with_warnings" if has_warnings else "completed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "symbols_total": result.get("symbols_total", 0),
+                            "symbols_processed": result.get("symbols_processed", 0),
+                            "candidate_edges": result.get("candidate_edges", 0),
+                            "selected_signals": result.get("selected_signals", 0),
+                            "executions_processed": result.get("executions_processed", 0),
+                            "failures": result.get("failures", 0),
+                            "result_json": result,
+                        },
+                    )
+                except Exception as exc:
+                    logger.exception("Entry-validation job failed")
+                    db.update(
+                        "binance_entry_validation_jobs",
+                        {"id": f"eq.{job_id}"},
+                        {
+                            "status": "failed",
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "error_message": str(exc)[:4000],
+                        },
+                    )
+                continue
+
             scan_job = _claim(db, "binance_scan_jobs")
             if scan_job:
                 job_id = scan_job["id"]

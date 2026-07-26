@@ -1,22 +1,8 @@
-# Quality report — V11.0.0
+# Quality report — V12.0.0
 
-## Research-integrity changes
-
-- Positive label is frozen at a saleable >=25% rise within 480 minutes.
-- Event and negative baselines use the same rolling local-low algorithm.
-- Same-coin controls and universe backgrounds are rejected if they rise 25% within eight hours.
-- Old 50% scans are excluded by a distinct event-definition version.
-- Package names are distinct from the 50% research exports.
-- The app generates no predictive features and selects no trading rule.
-
-## Operational checks
-
-- Full canonical-universe inventory retained.
-- Ten-day minute history remains deduplicated by symbol and timestamp.
-- Symbol ZIPs remain chunked around 300 MB, below the 512 MB upload limit.
-- Non-Latin symbol paths remain collision-resistant.
-- Dashboard cancellation retained.
-
-## Expected scaling
-
-The 25% threshold will generate more events, controls and package parts than the 50% threshold. Longer runtime and greater storage use are expected and are not, by themselves, failures.
+- New V12 unit tests: protocol freeze, continuous T3 signal, R48 arming sequence, portfolio cap/cooldown, exact no-stop execution, and schema migration.
+- 71 available automated tests passed.
+- Two unchanged legacy research-export tests could not be collected in the packaging container because PyArrow was unavailable there. PyArrow remains pinned in `requirements.txt` for Render.
+- All Python application and test files compile successfully.
+- The V12 migration is additive and preserves all previous rows and Storage files.
+- The validation dates, trigger thresholds, execution assumptions and graduation criteria are stored in `docs/V12_PREREGISTERED_PROTOCOL.json`.

@@ -1,33 +1,37 @@
-# Binance 25% ChatGPT Research Exporter — V11.0.0
+# Binance 50% Exact Entry Validation — V12.0.0
 
-V11 changes the research outcome to a **saleable Binance Spot coin rising at least 25% from the selected local-low baseline within eight hours**. The coin only needs to touch +25%; it does not need to remain there.
+V12 tests the two entry triggers discovered from the opened 2026 50%-within-eight-hours research on a separate, earlier validation period.
 
-The application stays neutral: it collects, labels, audits and packages raw evidence. ChatGPT performs feature generation and blank-canvas pattern discovery.
+## Frozen validation period
 
-## Fixed discovery window
+- 2025-01-01 inclusive
+- 2025-07-01 exclusive
+- The reserved 2025-07-01 to 2025-11-01 sealed period is not accessed.
 
-- Start: 2026-01-01 inclusive
-- End: 2026-07-25 exclusive
-- Window: 480 minutes
-- Threshold: 25%
-- Saleability: at least 500 quote units of seller-initiated executed notional within five minutes after the exact crossing
-- Treatment: all 2026 evidence is exploratory discovery only
+## Strategies
 
-## Evidence populations
+1. **E1 broad momentum confirmation:** entry after abnormal trade participation, abnormal volume expansion, or re-acceleration after a pullback.
+2. **E2 R48 armed then confirmation:** first require the fixed R48 recovery/volume state, then wait for the same confirmation.
 
-1. Every saleable 25% event with ten days of raw one-minute history.
-2. Up to five same-coin scanner-equivalent non-event controls per event.
-3. One deterministic scanner-equivalent non-event background sample for every canonical Binance Spot symbol.
-4. Full-universe daily bars and raw BTCUSDT, ETHUSDT and BNBUSDT reference data.
+Signals are evaluated after every completed one-minute bar across the canonical Binance Spot universe.
+
+## Execution
+
+- Position: 500 quote units, normally USDT.
+- Entry: first buyer-initiated aggregate trades after the signal, within 60 seconds.
+- Primary exit: +15% target or 24-hour time exit.
+- Stop-loss: none.
+- Exit: seller-initiated aggregate trades within five minutes after the exit trigger.
+- Fees: 10 basis points per side.
+- Maximum selected entries: five per UTC day per strategy.
+- Diagnostics: exact 8h, 24h and 32h MFE/MAE and +10%, +15%, +25% and +50% target touches.
+
+No parameter may be changed after the validation results are opened. Failure retires the strategy. Passing permits a separately built sealed test.
 
 ## Output
 
-- `CHATGPT_25PCT_RESEARCH_INDEX.zip`
-- `DISCOVERY_2026_25PCT_UNIVERSE_REFERENCE.zip`
-- every numbered `DISCOVERY_2026_25PCT_SYMBOLS_PART_*.zip`
+The completed job creates `ENTRY_VALIDATION_2025_RESULTS.zip`. Download it and upload it to ChatGPT for independent interpretation.
 
-The 25% event population is expected to be materially larger than the prior 50% population, so the exporter may create more numbered ZIP parts and take longer. Packages remain split below the upload target.
+## Important limitation
 
-## Upgrade
-
-No Supabase migration is required from V10.2.1. Replace the repository files, redeploy both Render services, confirm `/health` reports `11.0.0`, run a new 25% scan, and then run a new export. The previous 50% scan cannot be reused.
+The symbol universe is based on coins tradeable when the job runs. Historically delisted coins are absent, so survivorship bias is reported explicitly.

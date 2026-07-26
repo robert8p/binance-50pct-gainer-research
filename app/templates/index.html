@@ -3,105 +3,73 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Binance 25% ChatGPT Research Exporter</title>
+  <title>Binance V12 Exact Entry Validation</title>
   <style>
-    :root { color-scheme: dark; --bg:#0b0f14; --panel:#141a22; --line:#27303d; --text:#f3f5f7; --muted:#9ba7b4; --accent:#f3ba2f; --good:#65d68a; }
+    :root { color-scheme: dark; --bg:#090d12; --panel:#141a22; --line:#2a3442; --text:#f4f6f8; --muted:#9ca9b7; --accent:#f3ba2f; --good:#62d589; --bad:#ff6b6b; }
     * { box-sizing:border-box; } body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); }
-    main { max-width:1220px; margin:auto; padding:32px 20px 60px; } h1 { margin:0 0 8px; font-size:32px; } h2 { margin-top:0; }
-    .muted { color:var(--muted); } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:18px; margin:22px 0; }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 12px 30px rgba(0,0,0,.18); margin-top:18px; }
-    label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; } input,select { width:100%; padding:11px; border-radius:9px; border:1px solid var(--line); background:#0d1218; color:var(--text); }
-    .danger { background:#ef4444; color:white; margin-top:0; padding:7px 10px; }
-    button { margin-top:14px; background:var(--accent); color:#17130a; border:0; padding:11px 16px; border-radius:9px; font-weight:750; cursor:pointer; }
-    table { width:100%; border-collapse:collapse; font-size:13px; } th,td { text-align:left; border-bottom:1px solid var(--line); padding:10px 8px; vertical-align:top; } th { color:var(--muted); font-weight:600; }
-    a { color:#ffd86b; } .status { font-weight:700; } .warning { border-left:4px solid var(--accent); padding-left:12px; } .good { color:var(--good); }
-    .scroll { overflow:auto; } code { color:#fbd77d; } .small { font-size:12px; }
+    main { max-width:1180px; margin:auto; padding:34px 20px 64px; } h1 { margin:0 0 8px; font-size:32px; } h2 { margin-top:0; }
+    .muted { color:var(--muted); } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:18px; margin-top:22px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; margin-top:18px; box-shadow:0 14px 34px rgba(0,0,0,.2); }
+    .warning { border-left:4px solid var(--accent); padding-left:12px; } .good { color:var(--good); } .bad { color:var(--bad); }
+    button { background:var(--accent); color:#17130a; border:0; padding:11px 16px; border-radius:9px; font-weight:800; cursor:pointer; }
+    .danger { background:#ef4444; color:white; padding:7px 10px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; } th,td { text-align:left; border-bottom:1px solid var(--line); padding:10px 8px; vertical-align:top; } th { color:var(--muted); }
+    a { color:#ffd86b; } code { color:#fbd77d; } .scroll { overflow:auto; } .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:5px 9px; margin:3px; color:var(--muted); }
   </style>
 </head>
 <body><main>
-  <h1>Binance 25% ChatGPT Research Exporter</h1>
-  <p class="muted">v11 keeps the app in its proper role: it collects, cleans, matches and partitions the evidence. ChatGPT—not the app—will generate features, search for patterns and formulate candidate rules.</p>
-  <p class="warning">V9’s hard-coded momentum backtest is retired and disabled. V11 contains no preferred predictor, signal threshold, profit target or trading rule.</p>
+  <h1>Binance Exact Entry Validation</h1>
+  <p class="muted">V12.0.0 continuously tests the two frozen 50% research triggers on untouched 2025 validation evidence using Binance aggregate-trade execution proxies.</p>
+  <p class="warning"><strong>No stop-loss is used.</strong> The primary exit is +15% or 24 hours, whichever occurs first. The app does not access the separately reserved July–October 2025 sealed period.</p>
 
   <div class="grid">
     <section class="card">
-      <h2>Step 1 — Build the 2026 saleable 25% / 8-hour event scan</h2>
-      <form method="post" action="/scans">
-        <label>Historical start date (UTC, inclusive)</label><input name="window_start_date" type="date" value="2026-01-01" required>
-        <label>Historical end date (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2026-07-25" required>
-        <p class="muted small">This fixed 205-day window covers 2026 through 24 July. Because parts of 2026 have already been examined, the entire export is exploratory discovery evidence only.</p>
-        <input name="lookback_days" type="hidden" value="60">
-        <label>Event definition</label><input value="Saleable ≥25% rise within 8 hours" disabled>
-        <input name="threshold_pct" type="hidden" value="25">
-        <input name="quote_assets" type="hidden" value="USDT,USDC,FDUSD">
-        <input name="min_exit_notional" type="hidden" value="500">
-        <input name="confirmation_window_seconds" type="hidden" value="300">
-        <button>Queue 2026 scan</button>
+      <h2>Frozen validation</h2>
+      <p><span class="pill">1 Jan–30 Jun 2025</span><span class="pill">All completed minutes</span><span class="pill">500 quote-unit entries</span></p>
+      <p><strong>E1:</strong> broad momentum confirmation after abnormal volume, trade participation or pullback re-acceleration.</p>
+      <p><strong>E2:</strong> R48 armed state followed by the same confirmation.</p>
+      <form method="post" action="/entry-validation">
+        <button>Queue V12 validation</button>
       </form>
+      <p class="muted">Queue only once. This can take many hours because exact aggregate-trade paths are downloaded for selected alerts.</p>
     </section>
 
     <section class="card">
-      <h2>Step 2 — Create neutral ChatGPT evidence packages</h2>
-      <form method="post" action="/chatgpt-export">
-        <label>Completed explicit-date 8-hour scan</label>
-        <select name="scan_id" required>
-          {% for scan in chatgpt_source_scans %}
-          <option value="{{ scan.id }}">{{ scan.window_start_date }} to {{ scan.window_end_date_exclusive }} — {{ scan.events_found or 0 }} saleable events — {{ scan.id[:8] }}</option>
-          {% endfor %}
-        </select>
-        <input name="controls_per_event" type="hidden" value="5">
-        <label>Raw history per sample</label><input value="10 days of one-minute Binance data" disabled>
-        <label>Evidence populations</label><input value="Events + 5 same-coin controls/event + one neutral background window for every canonical coin" disabled>
-        <label>Chronological partitions</label><input value="100% exploratory 2026 discovery; fresh validation will be collected separately" disabled>
-        <label>Universe reference data</label><input value="Every canonical symbol, full-universe daily bars, plus BTC/ETH/BNB minute references" disabled>
-        <button>Queue neutral research export</button>
-      </form>
-      <p class="muted small">The exporter covers the complete canonical Binance Spot universe and splits raw symbol evidence into upload-sized ZIP parts. It does not calculate or rank predictive features.</p>
+      <h2>Frozen execution</h2>
+      <p>Entry: first buyer-initiated aggregate trades after the signal, accumulated to 500 quote units within 60 seconds.</p>
+      <p>Exit: first seller-initiated aggregate trades after +15% is touched, or after 24 hours if it is not touched.</p>
+      <p>Diagnostics: exact 8h, 24h and 32h maximum favourable/adverse excursion and +10%, +15%, +25% and +50% target hits.</p>
     </section>
   </div>
-
-  <section class="card"><h2>Correct research sequence</h2>
-    <p>Download <code>CHATGPT_25PCT_RESEARCH_INDEX.zip</code>, <code>DISCOVERY_2026_25PCT_UNIVERSE_REFERENCE.zip</code>, and every <code>DISCOVERY_2026_25PCT_SYMBOLS_PART_*.zip</code>, then upload them to ChatGPT.</p>
-    <p><strong>Research status:</strong> all 2026 evidence is treated as exploratory. Validation and sealed evidence will come from separate earlier periods after ChatGPT freezes candidate rules.</p>
-  </section>
 
   <section class="card"><h2>Worker</h2>
     {% if heartbeat %}<p>Last heartbeat: <code>{{ heartbeat.heartbeat_at }}</code></p>{% else %}<p class="muted">No worker heartbeat yet.</p>{% endif %}
   </section>
 
-  <section class="card"><h2>Saleable 25% / 8-hour scan jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Historical window</th><th>Status</th><th>Progress</th><th>Candidates</th><th>Saleable events</th><th>Failures</th></tr></thead>
-    <tbody>{% for scan in scans %}<tr>
-      <td>{{ scan.created_at }}<br><span class="muted">{{ scan.id[:8] }}</span></td>
-      <td>{{ scan.window_start_date or "latest" }} to {{ scan.window_end_date_exclusive or "latest" }}</td>
-      <td class="status">{{ scan.status }}</td><td>{{ scan.symbols_processed or 0 }}/{{ scan.symbols_total or 0 }}</td>
-      <td>{{ scan.candidates_found or 0 }}</td><td>{{ scan.events_found or 0 }}</td><td>{{ scan.failures or 0 }}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div></section>
-
-  <section class="card"><h2>Neutral ChatGPT export jobs</h2><div class="scroll"><table>
-    <thead><tr><th>Created</th><th>Status</th><th>Full-universe symbols</th><th>Samples</th><th>Negative samples</th><th>Minute rows</th><th>Failures</th><th>Action</th></tr></thead>
-    <tbody>{% for job in chatgpt_export_jobs %}<tr>
+  <section class="card"><h2>Validation jobs</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>Status</th><th>Symbols</th><th>Candidate edges</th><th>Exact executions</th><th>Failures</th><th>Decision</th><th>Action</th></tr></thead>
+    <tbody>{% for job in entry_validation_jobs %}<tr>
       <td>{{ job.created_at }}<br><span class="muted">{{ job.id[:8] }}</span></td>
-      <td class="status">{{ job.status }}</td><td>{{ job.symbols_processed or 0 }}/{{ job.symbols_total or 0 }}</td>
-      <td>{{ job.samples_exported or 0 }}</td><td>{{ job.controls_created or 0 }}</td><td>{{ job.minute_rows_exported or 0 }}</td><td>{{ job.failures or 0 }}</td>
-      <td>{% if job.status in ["queued", "running"] %}<form method="post" action="/chatgpt-export/{{ job.id }}/cancel"><button class="danger">Cancel</button></form>{% else %}—{% endif %}</td>
+      <td><strong>{{ job.status }}</strong></td>
+      <td>{{ job.symbols_processed or 0 }}/{{ job.symbols_total or 0 }}</td>
+      <td>{{ job.candidate_edges or 0 }}</td>
+      <td>{{ job.executions_processed or 0 }}/{{ job.selected_signals or 0 }}</td>
+      <td>{{ job.failures or 0 }}</td>
+      <td>{% if job.result_json and job.result_json.overall_decision %}{{ "PASS" if job.result_json.overall_decision.any_strategy_passed else "FAIL" }}{% else %}—{% endif %}</td>
+      <td>{% if job.status in ["queued", "running"] %}<form method="post" action="/entry-validation/{{ job.id }}/cancel"><button class="danger">Cancel</button></form>{% else %}—{% endif %}</td>
     </tr>{% endfor %}</tbody>
   </table></div></section>
 
-  <section class="card"><h2>ChatGPT research downloads</h2>
-    <p class="warning">This release intentionally creates no validation or sealed package from 2026. All 2026 evidence is discovery-only.</p>
-    <div class="scroll"><table>
-      <thead><tr><th>Created</th><th>Role</th><th>Split</th><th>File</th><th>Size</th><th>Download</th></tr></thead>
-      <tbody>{% for file in chatgpt_export_files %}<tr>
-        <td>{{ file.created_at }}</td><td>{{ file.role }}</td><td>{{ file.split or "index" }}</td>
-        <td>{{ file.filename }}<br><span class="muted">{{ file.sha256[:12] }}…</span></td><td>{{ file.size_bytes }}</td>
-        <td><a href="/chatgpt-export-files/{{ file.id }}">temporary link</a></td>
-      </tr>{% endfor %}</tbody>
-    </table></div>
-  </section>
+  <section class="card"><h2>Results downloads</h2><div class="scroll"><table>
+    <thead><tr><th>Created</th><th>File</th><th>Size</th><th>SHA-256</th><th>Download</th></tr></thead>
+    <tbody>{% for file in entry_validation_files %}<tr>
+      <td>{{ file.created_at }}</td><td>{{ file.filename }}</td><td>{{ file.size_bytes }}</td><td><code>{{ file.sha256[:16] }}…</code></td>
+      <td><a href="/entry-validation-files/{{ file.id }}">temporary link</a></td>
+    </tr>{% endfor %}</tbody>
+  </table></div></section>
 
-  <section class="card"><h2>Previous research audit</h2>
-    <p class="muted">Earlier scans, controls, context jobs, confirmations and backtests remain in Supabase and Storage. V11 does not delete or reinterpret them, but they are not used to generate the new blank-canvas patterns.</p>
+  <section class="card"><h2>Decision rule</h2>
+    <p>Download <code>ENTRY_VALIDATION_2025_RESULTS.zip</code> and upload it to ChatGPT. Failed triggers are retired without threshold changes. A passing trigger may proceed unchanged to a separately built sealed test.</p>
+    <p class="muted">Earlier scans and research exports remain in Supabase and Storage, but V12 does not use them during validation.</p>
   </section>
 </main></body></html>
