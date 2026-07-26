@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Binance ChatGPT Research Exporter</title>
+  <title>Binance 25% ChatGPT Research Exporter</title>
   <style>
     :root { color-scheme: dark; --bg:#0b0f14; --panel:#141a22; --line:#27303d; --text:#f3f5f7; --muted:#9ba7b4; --accent:#f3ba2f; --good:#65d68a; }
     * { box-sizing:border-box; } body { margin:0; font-family:Inter,system-ui,sans-serif; background:var(--bg); color:var(--text); }
@@ -19,20 +19,20 @@
   </style>
 </head>
 <body><main>
-  <h1>Binance ChatGPT Research Exporter</h1>
-  <p class="muted">v10.2 keeps the app in its proper role: it collects, cleans, matches and partitions the evidence. ChatGPT—not the app—will generate features, search for patterns and formulate candidate rules.</p>
-  <p class="warning">V9’s hard-coded momentum backtest is retired and disabled. V10.2 contains no preferred predictor, signal threshold, profit target or trading rule.</p>
+  <h1>Binance 25% ChatGPT Research Exporter</h1>
+  <p class="muted">v11 keeps the app in its proper role: it collects, cleans, matches and partitions the evidence. ChatGPT—not the app—will generate features, search for patterns and formulate candidate rules.</p>
+  <p class="warning">V9’s hard-coded momentum backtest is retired and disabled. V11 contains no preferred predictor, signal threshold, profit target or trading rule.</p>
 
   <div class="grid">
     <section class="card">
-      <h2>Step 1 — Build the 2026 8-hour event scan</h2>
+      <h2>Step 1 — Build the 2026 saleable 25% / 8-hour event scan</h2>
       <form method="post" action="/scans">
         <label>Historical start date (UTC, inclusive)</label><input name="window_start_date" type="date" value="2026-01-01" required>
         <label>Historical end date (UTC, exclusive)</label><input name="window_end_date_exclusive" type="date" value="2026-07-25" required>
         <p class="muted small">This fixed 205-day window covers 2026 through 24 July. Because parts of 2026 have already been examined, the entire export is exploratory discovery evidence only.</p>
         <input name="lookback_days" type="hidden" value="60">
-        <label>Event definition</label><input value="Saleable ≥50% rise within 8 hours" disabled>
-        <input name="threshold_pct" type="hidden" value="50">
+        <label>Event definition</label><input value="Saleable ≥25% rise within 8 hours" disabled>
+        <input name="threshold_pct" type="hidden" value="25">
         <input name="quote_assets" type="hidden" value="USDT,USDC,FDUSD">
         <input name="min_exit_notional" type="hidden" value="500">
         <input name="confirmation_window_seconds" type="hidden" value="300">
@@ -61,7 +61,7 @@
   </div>
 
   <section class="card"><h2>Correct research sequence</h2>
-    <p>Download <code>CHATGPT_RESEARCH_INDEX.zip</code>, <code>DISCOVERY_2026_UNIVERSE_REFERENCE.zip</code>, and every <code>DISCOVERY_2026_SYMBOLS_PART_*.zip</code>, then upload them to ChatGPT.</p>
+    <p>Download <code>CHATGPT_25PCT_RESEARCH_INDEX.zip</code>, <code>DISCOVERY_2026_25PCT_UNIVERSE_REFERENCE.zip</code>, and every <code>DISCOVERY_2026_25PCT_SYMBOLS_PART_*.zip</code>, then upload them to ChatGPT.</p>
     <p><strong>Research status:</strong> all 2026 evidence is treated as exploratory. Validation and sealed evidence will come from separate earlier periods after ChatGPT freezes candidate rules.</p>
   </section>
 
@@ -69,7 +69,7 @@
     {% if heartbeat %}<p>Last heartbeat: <code>{{ heartbeat.heartbeat_at }}</code></p>{% else %}<p class="muted">No worker heartbeat yet.</p>{% endif %}
   </section>
 
-  <section class="card"><h2>8-hour scan jobs</h2><div class="scroll"><table>
+  <section class="card"><h2>Saleable 25% / 8-hour scan jobs</h2><div class="scroll"><table>
     <thead><tr><th>Created</th><th>Historical window</th><th>Status</th><th>Progress</th><th>Candidates</th><th>Saleable events</th><th>Failures</th></tr></thead>
     <tbody>{% for scan in scans %}<tr>
       <td>{{ scan.created_at }}<br><span class="muted">{{ scan.id[:8] }}</span></td>
@@ -102,6 +102,6 @@
   </section>
 
   <section class="card"><h2>Previous research audit</h2>
-    <p class="muted">Earlier scans, controls, context jobs, confirmations and backtests remain in Supabase and Storage. V10.2 does not delete or reinterpret them, but they are not used to generate the new blank-canvas patterns.</p>
+    <p class="muted">Earlier scans, controls, context jobs, confirmations and backtests remain in Supabase and Storage. V11 does not delete or reinterpret them, but they are not used to generate the new blank-canvas patterns.</p>
   </section>
 </main></body></html>

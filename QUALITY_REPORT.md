@@ -1,25 +1,22 @@
-# Quality report — V10.2.1
+# Quality report — V11.0.0
 
-## Completed checks
+## Research-integrity changes
 
-- Full canonical-symbol inventory is read from the source scan snapshot.
-- Event-bearing and non-event symbols are processed by the same worker loop.
-- Every eligible symbol is represented in the universe inventory and daily dataset.
-- Full-universe background timestamps are deterministic and chosen without market outcomes.
-- Background baselines use the same rolling-local-low algorithm as events.
-- Negative samples with a future >=50% eight-hour move are rejected.
-- Raw ten-day minute windows remain unengineered and are deduplicated by physical symbol/time.
-- Output is partitioned into upload-sized symbol chunks.
-- Dashboard cancellation is cooperative and audited as a failed job.
-- Collision-resistant ASCII paths handle non-Latin Binance symbols.
-- 65 available automated tests passed.
-- Python compilation, Jinja rendering and FastAPI route tests passed.
+- Positive label is frozen at a saleable >=25% rise within 480 minutes.
+- Event and negative baselines use the same rolling local-low algorithm.
+- Same-coin controls and universe backgrounds are rejected if they rise 25% within eight hours.
+- Old 50% scans are excluded by a distinct event-definition version.
+- Package names are distinct from the 50% research exports.
+- The app generates no predictive features and selects no trading rule.
 
-## Environment limitation
+## Operational checks
 
-Two legacy research tests require PyArrow during test collection. PyArrow was unavailable for Python 3.13 in the local packaging container, so those two unchanged tests were excluded locally. PyArrow remains pinned in `requirements.txt` for GitHub Actions and Render. All other 65 tests passed.
+- Full canonical-universe inventory retained.
+- Ten-day minute history remains deduplicated by symbol and timestamp.
+- Symbol ZIPs remain chunked around 300 MB, below the 512 MB upload limit.
+- Non-Latin symbol paths remain collision-resistant.
+- Dashboard cancellation retained.
 
+## Expected scaling
 
-## V10.2.1 regression fix
-
-Added a duplicate-symbol regression test for BTC/ETH/BNB reference packaging. The fix changes packaging only; sample selection and raw evidence remain unchanged.
+The 25% threshold will generate more events, controls and package parts than the 50% threshold. Longer runtime and greater storage use are expected and are not, by themselves, failures.

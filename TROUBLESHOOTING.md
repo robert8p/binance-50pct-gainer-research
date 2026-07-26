@@ -1,35 +1,20 @@
-# Troubleshooting — V10.2
+# Troubleshooting — V11
 
-## The denominator still equals only event-bearing symbols
+## No scan appears in the export dropdown
 
-Confirm `/health` reports `10.2.1`. If it reports an older version, redeploy both Render services.
+The source must be a completed V11 scan with:
 
-## Stop an export
+- event definition `v11_rolling_8h_25pct`;
+- threshold 25%;
+- window 480 minutes;
+- dates 2026-01-01 to 2026-07-25 exclusive.
 
-Use the dashboard **Cancel** button. The current symbol operation may finish before the worker notices cancellation.
+Old 50% scans are deliberately excluded. Refresh the dashboard after the V11 scan completes.
 
-For an old release without the button:
+## Export is much larger or slower
 
-1. Suspend the Render worker.
-2. Run:
+A 25% threshold creates more positive events and controls than a 50% threshold. This is expected. The exporter deduplicates overlapping minute history by symbol and splits the result into upload-sized parts.
 
-```sql
-update binance_chatgpt_export_jobs
-set status='failed', completed_at=now(), heartbeat_at=null,
-    error_message='Cancelled manually'
-where status in ('queued','running');
-```
+## Cancel an export
 
-3. Deploy V10.2 before resuming the worker.
-
-## Some symbols are daily-only
-
-The universe-reference package intentionally lists every canonical symbol. A recently listed coin may lack ten complete days of minute history and therefore have no raw background window. Its daily data and failure reason remain in the audit files.
-
-## Several discovery ZIPs appear
-
-This is expected. V10.2 chunks compressed symbol evidence at approximately 300 MB per ZIP so the files are practical to upload and analyse.
-
-## Job is slow
-
-The exporter now reads every canonical symbol rather than only event-bearing symbols. Check that the worker heartbeat and symbol count continue advancing. Do not queue a duplicate job.
+Use the dashboard Cancel button. The worker stops cooperatively after its current symbol operation.

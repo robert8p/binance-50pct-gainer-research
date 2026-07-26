@@ -47,7 +47,7 @@ def test_quote_preference_selects_one_pair_per_base_coin():
         {
             "id": "00000000-0000-0000-0000-000000000101",
             "lookback_days": 2,
-            "threshold_pct": 50,
+            "threshold_pct": 25,
             "min_exit_notional": 500,
             "confirmation_window_seconds": 300,
             "quote_assets": ["USDT", "USDC", "FDUSD"],

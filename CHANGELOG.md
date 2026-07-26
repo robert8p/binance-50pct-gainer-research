@@ -1,18 +1,10 @@
 # Changelog
 
-## 10.2.1
+## 11.0.0
 
-- Reference package symbol-column fix: reuses the cached `symbol` column instead of inserting a duplicate.
-- Prevents the final-stage pandas error `cannot insert symbol, already exists`.
-- No research definition, sample selection, or exported data semantics changed.
-
-## 10.2.1
-
-- Expanded neutral evidence from event-bearing symbols to the complete canonical Binance Spot universe.
-- Added one deterministic scanner-equivalent background window per canonical symbol.
-- Retained up to five same-coin controls per event.
-- Added full-universe daily bars and a complete symbol inventory.
-- Split raw symbol evidence into approximately 300 MB ZIP chunks.
-- Added dashboard cancellation for queued/running neutral exports.
-- Made non-Latin symbol filenames collision-resistant.
-- Retained 2026 as exploratory discovery only; no validation claims are created.
+- Changed the research outcome from a saleable >=50% rise to a saleable >=25% rise within eight hours.
+- Added a distinct V11 event-definition and export-protocol version so old 50% scans cannot be mixed into the 25% workflow.
+- Updated event, control and full-universe background contamination checks to 25%.
+- Renamed output packages with `25PCT` to prevent accidental reuse of 50% exports.
+- Preserved the neutral ChatGPT-led research design, five same-coin controls, full-universe backgrounds and ten-day raw history.
+- No Supabase migration required.
