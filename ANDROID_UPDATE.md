@@ -1,38 +1,38 @@
-# Simple Windows update — V10.2
+# Simple Windows bug-fix update — V10.2.1
 
-## 1. Stop the old export
+## What this fixes
 
-1. Open Render and suspend `binance-50pct-scanner-worker`.
-2. In Supabase SQL Editor run:
+The full-universe export reached 470/470 symbols, then failed while creating the BTC/ETH/BNB reference package with:
 
-```sql
-update binance_chatgpt_export_jobs
-set status = 'failed',
-    completed_at = now(),
-    heartbeat_at = null,
-    error_message = 'Cancelled manually: superseded by full-universe exporter'
-where status in ('queued','running');
+```text
+cannot insert symbol, already exists
 ```
 
-Leave the worker suspended until V10.2 is deployed.
+The cached reference data already contained a `symbol` column. V10.2 tried to insert a second one. V10.2.1 reuses the existing column.
+
+No research definition, event selection, control selection, or raw market data changes.
+
+## 1. Keep the failed job as an audit record
+
+Do not delete the failed job. It will not restart automatically because its status is already `failed`.
 
 ## 2. Update GitHub
 
-1. Extract `binance_chatgpt_research_exporter_full_universe_v10_2_0.zip`.
+1. Extract `binance_chatgpt_research_exporter_full_universe_v10_2_1.zip`.
 2. Open the existing GitHub repository.
 3. Select **Add file → Upload files**.
 4. Upload everything from inside the extracted folder, replacing matching files.
 5. Commit with:
 
 ```text
-Upgrade to v10.2 full-universe ChatGPT exporter
+Fix V10.2 reference package export
 ```
 
-No new Supabase migration is required if V10 is already installed.
+No Supabase migration is required.
 
 ## 3. Redeploy
 
-Resume the Render worker after GitHub has updated. Wait for both services to redeploy.
+Wait for both Render services to redeploy. If the worker is suspended, resume it after the new deployment is available.
 
 Open:
 
@@ -43,16 +43,14 @@ https://YOUR-APP.onrender.com/health
 Expected:
 
 ```json
-{"status":"ok","version":"10.2.0"}
+{"status":"ok","version":"10.2.1"}
 ```
 
-## 4. Queue the corrected export
+## 4. Queue one new export
 
-Use the already completed 2026 scan. You do not need to rerun it.
+Use the same completed 2026 scan. Do not rerun the scan.
 
-The job's total-symbol count should now represent the complete canonical Binance universe, not only event-bearing coins.
-
-The dashboard now includes a **Cancel** button for queued or running export jobs.
+The persistent Render disk should retain the downloaded Binance archive cache, so the rerun should avoid most network downloads. It must still rebuild the data frames and packages.
 
 ## 5. Download after completion
 

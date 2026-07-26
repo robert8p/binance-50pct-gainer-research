@@ -2,7 +2,7 @@
 
 ## The denominator still equals only event-bearing symbols
 
-Confirm `/health` reports `10.2.0`. If it reports an older version, redeploy both Render services.
+Confirm `/health` reports `10.2.1`. If it reports an older version, redeploy both Render services.
 
 ## Stop an export
 

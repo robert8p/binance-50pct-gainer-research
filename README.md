@@ -1,4 +1,4 @@
-# Binance ChatGPT Research Exporter — V10.2.0
+# Binance ChatGPT Research Exporter — V10.2.1
 
 V10.2 keeps the application neutral: it collects, labels, audits and packages Binance evidence; ChatGPT performs feature generation and pattern discovery.
 
@@ -41,4 +41,4 @@ Queued or running neutral exports can be cancelled from the dashboard. Cancellat
 
 ## Upgrade
 
-No new Supabase migration is required when V10.0 or V10.1 is already installed. Replace the repository files, redeploy both Render services, confirm `/health` reports `10.2.0`, and queue a new export from the completed 2026 scan.
+No new Supabase migration is required when V10.0 or V10.1 is already installed. Replace the repository files, redeploy both Render services, confirm `/health` reports `10.2.1`, and queue a new export from the completed 2026 scan.

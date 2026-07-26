@@ -1,6 +1,6 @@
 {
-  "version": "v10_2026_full_universe_discovery_export_2",
-  "app_version": "10.2.0",
+  "version": "v10_2026_full_universe_discovery_export_3",
+  "app_version": "10.2.1",
   "window": {
     "start_inclusive": "2026-01-01",
     "end_exclusive": "2026-07-25"

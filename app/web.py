@@ -16,7 +16,7 @@ from .supabase import SupabaseClient
 
 settings = Settings.from_env()
 db = SupabaseClient(settings.supabase_url, settings.supabase_service_role_key, settings.storage_bucket)
-app = FastAPI(title="Binance ChatGPT Research Exporter", version="10.2.0")
+app = FastAPI(title="Binance ChatGPT Research Exporter", version="10.2.1")
 templates = Jinja2Templates(directory="app/templates")
 
 
@@ -34,7 +34,7 @@ def _auth(request: Request) -> None:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": "10.2.0"}
+    return {"status": "ok", "version": "10.2.1"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -380,7 +380,7 @@ def create_chatgpt_export(
 ) -> RedirectResponse:
     _auth(request)
     if controls_per_event != 5:
-        raise HTTPException(400, "V10.2 uses five scanner-equivalent same-coin controls per event")
+        raise HTTPException(400, "V10.2.1 uses five scanner-equivalent same-coin controls per event")
     rows = db.select("binance_scan_jobs", filters={"id": f"eq.{scan_id}"}, limit=1)
     if not rows or rows[0].get("status") not in {"completed", "completed_with_warnings"}:
         raise HTTPException(400, "Select a completed explicit-date eight-hour scan")
@@ -390,14 +390,14 @@ def create_chatgpt_export(
     if not scan.get("window_start_date") or not scan.get("window_end_date_exclusive"):
         raise HTTPException(400, "V10 staged research requires an explicit historical start and end date")
     if str(scan.get("window_start_date"))[:10] != "2026-01-01" or str(scan.get("window_end_date_exclusive"))[:10] != "2026-07-25":
-        raise HTTPException(400, "V10.2 discovery is frozen to 2026-01-01 through 2026-07-25 exclusive")
+        raise HTTPException(400, "V10.2.1 discovery is frozen to 2026-01-01 through 2026-07-25 exclusive")
     db.insert(
         "binance_chatgpt_export_jobs",
         {
             "id": str(uuid.uuid4()),
             "scan_id": scan_id,
             "status": "queued",
-            "protocol_version": "v10_2026_full_universe_discovery_export_2",
+            "protocol_version": "v10_2026_full_universe_discovery_export_3",
             "controls_per_event": 5,
             "prior_days": 10,
             "discovery_pct": 60,

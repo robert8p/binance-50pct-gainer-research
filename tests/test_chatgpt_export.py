@@ -16,6 +16,7 @@ from app.chatgpt_export import (
     _chunk_symbols,
     _split_calendar_days,
     _zip_directory,
+    _prepare_reference_frame,
     extract_raw_window,
     safe_filename,
 )
@@ -65,6 +66,18 @@ def test_safe_filename_is_ascii_and_collision_resistant() -> None:
     assert safe_filename("BTCUSDT") == "BTCUSDT"
 
 
+
+
+def test_prepare_reference_frame_reuses_existing_symbol_column() -> None:
+    frame = _frame("2026-01-01T00:00:00Z", 5)
+    frame["symbol"] = "BTCUSDT"
+    result = _prepare_reference_frame(frame, "ETHUSDT")
+    assert list(result.columns) == ["symbol", "open_time", *list((
+        "open", "high", "low", "close", "volume", "quote_volume",
+        "trade_count", "taker_buy_base_volume", "taker_buy_quote_volume"
+    )), "observed"]
+    assert set(result["symbol"]) == {"ETHUSDT"}
+
 def test_temporal_splits_keep_whole_dates() -> None:
     events = [{"event_date": f"2025-01-{day:02d}"} for day in range(1, 11)]
     mapping, split_dates, summary = _split_calendar_days(
@@ -109,7 +122,7 @@ def test_zip_directory_preserves_parquet_and_text(tmp_path: Path) -> None:
 
 
 def test_protocol_is_full_universe_neutral_export() -> None:
-    assert PROTOCOL_VERSION == "v10_2026_full_universe_discovery_export_2"
+    assert PROTOCOL_VERSION == "v10_2026_full_universe_discovery_export_3"
 
 
 def test_exporter_builds_full_universe_chunks(tmp_path: Path, monkeypatch) -> None:

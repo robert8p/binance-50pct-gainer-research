@@ -1,4 +1,4 @@
-# Quality report — V10.2.0
+# Quality report — V10.2.1
 
 ## Completed checks
 
@@ -18,3 +18,8 @@
 ## Environment limitation
 
 Two legacy research tests require PyArrow during test collection. PyArrow was unavailable for Python 3.13 in the local packaging container, so those two unchanged tests were excluded locally. PyArrow remains pinned in `requirements.txt` for GitHub Actions and Render. All other 65 tests passed.
+
+
+## V10.2.1 regression fix
+
+Added a duplicate-symbol regression test for BTC/ETH/BNB reference packaging. The fix changes packaging only; sample selection and raw evidence remain unchanged.

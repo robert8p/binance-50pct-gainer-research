@@ -31,7 +31,7 @@ from .matched_controls import (
 )
 from .supabase import SupabaseClient
 
-PROTOCOL_VERSION = "v10_2026_full_universe_discovery_export_2"
+PROTOCOL_VERSION = "v10_2026_full_universe_discovery_export_3"
 BACKGROUND_SAMPLES_PER_SYMBOL = 1
 CHUNK_TARGET_BYTES = 300 * 1024 * 1024
 EXPORT_SPLITS = ("discovery",)
@@ -173,6 +173,16 @@ The separate universe-reference package contains raw one-minute BTCUSDT, ETHUSDT
 Event, same-coin control and full-universe background baselines use the same 480-minute rolling-minimum algorithm. Negative samples are rejected when the selected low subsequently gains 50% within eight hours or lies within 24 hours of a known event in that coin. All 2026 samples are exploratory discovery evidence.
 """
     path.write_text(text, encoding="utf-8")
+
+
+def _prepare_reference_frame(frame: pd.DataFrame, reference_symbol: str) -> pd.DataFrame:
+    """Normalise a cached reference frame without duplicating its symbol column."""
+    ref = frame.reset_index()
+    if "symbol" in ref.columns:
+        ref["symbol"] = reference_symbol
+    else:
+        ref.insert(0, "symbol", reference_symbol)
+    return ref[["symbol", "open_time", *RAW_COLUMNS, "observed"]]
 
 
 def _write_analysis_loader(path: Path) -> None:
@@ -750,9 +760,7 @@ class ChatGPTResearchExporter:
             for reference_symbol in REFERENCE_SYMBOLS:
                 loaded = self.cache.load_symbol(reference_symbol, load_start, scan_end)
                 source_manifest.extend(loaded.source_manifest)
-                ref = loaded.frame.reset_index()
-                ref.insert(0, "symbol", reference_symbol)
-                ref = ref[["symbol", "open_time", *RAW_COLUMNS, "observed"]]
+                ref = _prepare_reference_frame(loaded.frame, reference_symbol)
                 ref.to_parquet(
                     reference_dir / "reference_data" / f"{reference_symbol}.parquet",
                     index=False,

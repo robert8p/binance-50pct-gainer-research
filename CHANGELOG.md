@@ -1,6 +1,12 @@
 # Changelog
 
-## 10.2.0
+## 10.2.1
+
+- Reference package symbol-column fix: reuses the cached `symbol` column instead of inserting a duplicate.
+- Prevents the final-stage pandas error `cannot insert symbol, already exists`.
+- No research definition, sample selection, or exported data semantics changed.
+
+## 10.2.1
 
 - Expanded neutral evidence from event-bearing symbols to the complete canonical Binance Spot universe.
 - Added one deterministic scanner-equivalent background window per canonical symbol.

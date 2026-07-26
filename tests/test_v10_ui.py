@@ -16,10 +16,10 @@ def test_v10_dashboard_exposes_full_universe_export_and_cancel() -> None:
 
 def test_v10_health_version_is_declared() -> None:
     source = Path("app/web.py").read_text(encoding="utf-8")
-    assert 'version="10.2.0"' in source
-    assert '"version": "10.2.0"' in source
+    assert 'version="10.2.1"' in source
+    assert '"version": "10.2.1"' in source
     assert "V9 is retired" in source
-    assert "v10_2026_full_universe_discovery_export_2" in source
+    assert "v10_2026_full_universe_discovery_export_3" in source
 
 
 def test_v10_allows_205_day_explicit_scan() -> None:
